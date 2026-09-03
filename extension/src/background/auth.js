@@ -132,6 +132,79 @@ async function webflowRefresh() {
 // Public surface
 // ---------------------------------------------------------------------------
 
+/**
+ * Turn Chrome's terse OAuth errors into something actionable.
+ *
+ * `bad client id` in particular has two completely different causes with
+ * completely different fixes, and the raw message names neither.
+ *
+ * @returns {{title: string, steps: string[], fatal: boolean}}
+ */
+export function explainAuthError(err, mode = 'chrome') {
+  const msg = String((err && err.message) || err || '');
+  const id = chrome.runtime.id;
+  const manifest = chrome.runtime.getManifest();
+  const configured = (manifest.oauth2 && manifest.oauth2.client_id) || '';
+  const isPlaceholder = /REPLACE_WITH/i.test(configured);
+
+  if (isPlaceholder && mode === 'chrome') {
+    return {
+      title: 'No OAuth client configured yet.',
+      steps: [
+        'manifest.json still has the placeholder client ID.',
+        `Either create a "Chrome app" OAuth client with Item ID ${id} and paste its client ID into manifest.json under oauth2.client_id,`,
+        'or switch Sign-in method above to "Browser redirect / PKCE" and paste a Web-application client ID into the field that appears — that path needs no file editing.',
+      ],
+      fatal: true,
+    };
+  }
+
+  if (/bad client id|invalid.*client.*id/i.test(msg)) {
+    return {
+      title: 'Google rejected the OAuth client in manifest.json.',
+      steps: [
+        'Wrong client type — chrome.identity only accepts a "Chrome app" client. A "Web application" client always fails here. In Google Cloud → Clients, a Chrome-app client has an "Item ID" field; a web client has "Authorized redirect URIs" instead.',
+        `Or the Item ID does not match this extension. This extension's ID right now is ${id} — if you registered a different one (for example before moving the folder), edit the client and update it.`,
+        'Fastest way out: switch Sign-in method to "Browser redirect / PKCE". That works with the Web-application client you may already have, and needs no manifest edit.',
+      ],
+      fatal: true,
+    };
+  }
+
+  if (/redirect_uri_mismatch/i.test(msg)) {
+    return {
+      title: 'The redirect URI is not registered on that client.',
+      steps: [
+        `Add exactly this, trailing slash included, under Authorized redirect URIs: ${chrome.identity.getRedirectURL()}`,
+        'It changes if the extension ID changes, so re-check it after moving the folder.',
+      ],
+      fatal: true,
+    };
+  }
+
+  if (/access_denied|not granted or revoked|consent/i.test(msg)) {
+    return {
+      title: 'Google declined the authorization.',
+      steps: [
+        'If you closed the consent window, just try again.',
+        'Otherwise you are probably not on the app\u2019s test-user list: Google Auth Platform \u2192 Audience \u2192 Test users \u2192 Add users \u2192 your own address.',
+        'Grant both Sheets and Gmail at the prompt; declining either leaves the extension half-connected.',
+      ],
+      fatal: false,
+    };
+  }
+
+  if (/user is not signed in|no.*account/i.test(msg)) {
+    return {
+      title: 'No Google account is signed in to Chrome.',
+      steps: ['Chrome identity sign-in reuses the profile\u2019s account. Sign in to Chrome, or switch to "Browser redirect / PKCE", which prompts for an account itself.'],
+      fatal: true,
+    };
+  }
+
+  return { title: msg || 'Sign-in failed.', steps: [], fatal: true };
+}
+
 /** Current access token, refreshing silently if possible. */
 export async function getToken({ interactive = false } = {}) {
   if ((await mode()) === 'webflow') {

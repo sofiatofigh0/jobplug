@@ -9,7 +9,7 @@
       chrome.runtime.sendMessage({ type, payload }, (res) => {
         if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
         if (!res) return reject(new Error('No response from the background service.'));
-        if (!res.ok) return reject(Object.assign(new Error(res.error), { needsAuth: res.needsAuth }));
+        if (!res.ok) return reject(Object.assign(new Error(res.error), { needsAuth: res.needsAuth, explain: res.explain }));
         resolve(res.data);
       });
     });
@@ -26,6 +26,31 @@
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  /** Chrome's OAuth errors are unactionable on their own; auth.js attaches a fix. */
+  function showAuthError(err) {
+    const box = $('#conn-error');
+    const ex = err && err.explain;
+    if (!ex) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    box.innerHTML = `<strong>${esc(ex.title)}</strong>` +
+      (ex.steps.length ? `<ul>${ex.steps.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function renderIdentity() {
+    const d = await send('DIAGNOSTICS');
+    $('#ext-id-live').textContent = d.extensionId;
+    $('#redirect-uri-live').textContent = d.redirectUri;
+    const placeholder = /REPLACE_WITH/i.test(d.manifestClientId);
+    $('#manifest-client').textContent = placeholder
+      ? 'not set (placeholder)'
+      : (d.manifestClientId || 'not set');
+    $('#id-stability').textContent = d.hasPinnedKey
+      ? 'This ID is pinned by a key in manifest.json, so it stays the same wherever the folder lives.'
+      : 'This ID is derived from the folder path — it changes if you move the extension folder, which breaks the OAuth client. Run npm run pin-id (or the openssl recipe in SETUP.md) to fix it permanently.';
+    return d;
+  }
 
   // -------------------------------------------------------------------------
   // Resume alias editor
@@ -63,6 +88,7 @@
   async function load() {
     const state = await send('GET_STATE');
     settings = state.settings;
+    await renderIdentity().catch(() => {});
 
     CHECKS.forEach((k) => { $('#' + k).checked = !!settings[k]; });
     NUMS.forEach((k) => { $('#' + k).value = settings[k]; });
@@ -107,14 +133,23 @@
   // Wiring
   // -------------------------------------------------------------------------
   document.addEventListener('DOMContentLoaded', async () => {
-    $('#ext-id').textContent = chrome.runtime.id;
-    $('#redirect-uri').textContent = chrome.identity.getRedirectURL();
+    const legacyId = $('#ext-id');
+    if (legacyId) legacyId.textContent = chrome.runtime.id;
+    const legacyUri = $('#redirect-uri');
+    if (legacyUri) legacyUri.textContent = chrome.identity.getRedirectURL();
 
     if (new URLSearchParams(location.search).get('welcome')) {
       $('#setup-card').classList.remove('hidden');
     }
 
     $('#authMode').addEventListener('change', toggleWebflow);
+
+    $$('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+      const text = $('#' + b.dataset.copy).textContent;
+      try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+      catch { b.textContent = 'Select it'; }
+      setTimeout(() => { b.textContent = 'Copy'; }, 1800);
+    }));
     $('#btn-add-alias').addEventListener('click', () => renderAliases([...collectAliases(), { match: '', label: '' }]));
     $('#btn-save').addEventListener('click', () => save().catch((e) => toast(e.message)));
 
@@ -124,11 +159,13 @@
       try {
         await save();
         const res = await send('SIGN_IN');
+        $('#conn-error').classList.add('hidden');
         toast('Connected. Spreadsheet ready.');
         if (res.spreadsheetUrl) window.open(res.spreadsheetUrl, '_blank');
         await load();
       } catch (err) {
         toast(err.message);
+        showAuthError(err);
       } finally {
         btn.disabled = false; btn.textContent = 'Connect Google';
       }

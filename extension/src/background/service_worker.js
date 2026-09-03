@@ -1,6 +1,6 @@
 import '../common/constants.js';
 import '../common/util.js';
-import { signIn, signOut, authState } from './auth.js';
+import { signIn, signOut, authState, explainAuthError } from './auth.js';
 import {
   getSettings, setSettings, getAppList, getApp, upsertApp, deleteApp,
   computeStats, rememberSeen, getPending, dropPending, resumeLabelFor, makeId,
@@ -64,10 +64,26 @@ const handlers = {
   },
 
   async SIGN_IN() {
-    const profile = await signIn();
-    const id = await ensureSpreadsheet();
     const settings = await getSettings();
-    return { profile, spreadsheetId: id, spreadsheetUrl: settings.spreadsheetUrl };
+    let profile;
+    try {
+      profile = await signIn();
+    } catch (err) {
+      // Chrome's OAuth errors name the symptom, never the fix. Attach one.
+      throw Object.assign(err, { explain: explainAuthError(err, settings.authMode) });
+    }
+    const id = await ensureSpreadsheet();
+    return { profile, spreadsheetId: id, spreadsheetUrl: (await getSettings()).spreadsheetUrl };
+  },
+
+  async DIAGNOSTICS() {
+    const manifest = chrome.runtime.getManifest();
+    return {
+      extensionId: chrome.runtime.id,
+      redirectUri: chrome.identity.getRedirectURL(),
+      manifestClientId: (manifest.oauth2 && manifest.oauth2.client_id) || '',
+      hasPinnedKey: !!manifest.key,
+    };
   },
 
   async SIGN_OUT() {
@@ -208,6 +224,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     .catch((err) => sendResponse({
       ok: false,
       error: err && err.message ? err.message : String(err),
+      explain: (err && err.explain) || null,
       needsAuth: !!(err && (err.needsAuth || err.status === 401)),
     }));
   return true; // keep the channel open for the async response

@@ -28,6 +28,25 @@
     <h2>Google connection</h2>
     <p class="desc">JobPlug needs Sheets (to write your tracker) and read-only Gmail (to spot replies). Nothing is sent anywhere else.</p>
     <div id="conn-status" class="status">Checking…</div>
+    <div id="conn-error" class="status bad hidden"></div>
+
+    <div class="identity">
+      <div class="identity-row">
+        <span class="identity-label">This extension's ID</span>
+        <code id="ext-id-live"></code>
+        <button type="button" class="copy" data-copy="ext-id-live">Copy</button>
+      </div>
+      <div class="identity-row">
+        <span class="identity-label">Redirect URI</span>
+        <code id="redirect-uri-live"></code>
+        <button type="button" class="copy" data-copy="redirect-uri-live">Copy</button>
+      </div>
+      <div class="identity-row">
+        <span class="identity-label">Client ID in manifest</span>
+        <code id="manifest-client"></code>
+      </div>
+      <p class="help" id="id-stability"></p>
+    </div>
 
     <div class="field">
       <label for="authMode">Sign-in method</label>
