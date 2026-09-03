@@ -173,10 +173,11 @@ export function explainAuthError(err, mode = 'chrome') {
 
   if (/redirect_uri_mismatch/i.test(msg)) {
     return {
-      title: 'The redirect URI is not registered on that client.',
+      title: 'Google rejected the redirect URI.',
       steps: [
-        `Add exactly this, trailing slash included, under Authorized redirect URIs: ${chrome.identity.getRedirectURL()}`,
-        'It changes if the extension ID changes, so re-check it after moving the folder.',
+        'Most often this means the client is the wrong type. "Browser redirect / PKCE" needs a **Web application** client. A **Chrome Extension** client has no "Authorized redirect URIs" field at all, so this can never succeed with one — if your client page shows an Item ID, switch Sign-in method back to "Chrome identity" and put this extension\u2019s ID in that Item ID field instead.',
+        `Otherwise the URI is simply not registered yet. On a Web-application client, add exactly this under Authorized redirect URIs, trailing slash included: ${chrome.identity.getRedirectURL()}`,
+        `That URI contains the extension ID (${id}), so it changes whenever the ID does.`,
       ],
       fatal: true,
     };

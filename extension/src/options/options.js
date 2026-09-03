@@ -111,7 +111,12 @@
   }
 
   function toggleWebflow() {
-    $('#webflow-fields').classList.toggle('hidden', $('#authMode').value !== 'webflow');
+    // The two sign-in methods need different OAuth client *types*, and read the
+    // client ID from different places. Showing both at once is how people end up
+    // pasting a Chrome-Extension client into the PKCE fields.
+    const webflow = $('#authMode').value === 'webflow';
+    $('#webflow-fields').classList.toggle('hidden', !webflow);
+    $('#chrome-fields').classList.toggle('hidden', webflow);
   }
 
   async function save() {

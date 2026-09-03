@@ -24,9 +24,14 @@ test('an unset placeholder is diagnosed before anything else', () => {
   chrome.runtime.getManifest = () => ({ oauth2: { client_id: 'real-id' } });
 });
 
-test('redirect_uri_mismatch quotes the exact URI to register', () => {
+test('redirect_uri_mismatch leads with the wrong-client-type cause', () => {
   const r = explainAuthError(new Error('Authorization failed: redirect_uri_mismatch'), 'webflow');
-  assert.match(r.steps[0], /chromiumapp\.org/);
+  // A Chrome-Extension client has no redirect URI field at all, so pasting one
+  // into the PKCE fields can never work. That is the common case, not a typo.
+  assert.match(r.steps[0], /Web application/i);
+  assert.match(r.steps[0], /Chrome Extension/i);
+  assert.match(r.steps[0], /Item ID/i);
+  assert.match(r.steps[1], /chromiumapp\.org/, 'still quotes the exact URI to register');
 });
 
 test('a declined consent points at the test-user list', () => {
