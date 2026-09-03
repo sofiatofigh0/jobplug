@@ -292,6 +292,14 @@
     /submitted your application/i,
   ];
 
+  // A URL an ATS sends you to *after* a successful submit. Greenhouse uses
+  // /jobs/<id>/confirmation, Lever /thanks, Workable /applied, Indeed
+  // /post-apply. This is the most reliable signal there is for flows that
+  // navigate on submit, because it survives a full page load — unlike anything
+  // held in memory, and unlike the submit request itself, which a native form
+  // POST never exposes to fetch/XHR instrumentation.
+  C.SUCCESS_URL_RE = /\/(confirmation|confirmed|thank[-_]?you|thanks|success|applied|post[-_]?apply|application[-_]?(complete|completed|received|submitted|confirmation))(\/|\?|#|$)/i;
+
   // Button labels that mean "this click submits an application".
   C.APPLY_BUTTON_RE = /^\s*(submit( my)?( the)?( job)?( application)?|send( my)?( the)?( application)?|apply( now| for this job| to this job)?|easy apply|submit and continue|finish( and submit)?|complete application)\s*$/i;
 

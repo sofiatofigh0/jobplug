@@ -257,17 +257,24 @@ export async function dropPending(pendingId) {
 // ---------------------------------------------------------------------------
 // Job pages seen per tab, so an apply iframe can inherit the JD's metadata
 // ---------------------------------------------------------------------------
-const seenByTab = new Map();
-export function rememberSeen(tabId, rec) {
+// Held in chrome.storage.session rather than a Map: an MV3 service worker is
+// torn down after ~30s idle, and filling in a form takes far longer than that,
+// so an in-memory cache was routinely empty by the time the application landed.
+const SEEN_KEY = 'seenByTab';
+
+export async function rememberSeen(tabId, rec) {
   if (tabId == null) return;
-  seenByTab.set(tabId, { rec, at: Date.now() });
-  if (seenByTab.size > 60) {
-    const oldest = [...seenByTab.entries()].sort((a, b) => a[1].at - b[1].at)[0];
-    if (oldest) seenByTab.delete(oldest[0]);
-  }
+  const { [SEEN_KEY]: map } = await chrome.storage.session.get(SEEN_KEY);
+  const seen = map || {};
+  seen[tabId] = { rec, at: Date.now() };
+  const entries = Object.entries(seen).sort((a, b) => b[1].at - a[1].at).slice(0, 60);
+  await chrome.storage.session.set({ [SEEN_KEY]: Object.fromEntries(entries) });
 }
-export function recallSeen(tabId, maxAgeMs = 30 * 60_000) {
-  const hit = seenByTab.get(tabId);
+
+export async function recallSeen(tabId, maxAgeMs = 30 * 60_000) {
+  if (tabId == null) return null;
+  const { [SEEN_KEY]: map } = await chrome.storage.session.get(SEEN_KEY);
+  const hit = map && map[tabId];
   if (!hit || Date.now() - hit.at > maxAgeMs) return null;
   return hit.rec;
 }

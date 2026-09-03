@@ -125,7 +125,7 @@ const handlers = {
   },
 
   async SEEN_JOB({ record }, sender) {
-    rememberSeen(sender && sender.tab && sender.tab.id, record);
+    await rememberSeen(sender && sender.tab && sender.tab.id, record);
     return { ok: true };
   },
 

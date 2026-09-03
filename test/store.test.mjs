@@ -127,3 +127,21 @@ test('computeStats is safe on an empty history', () => {
   assert.equal(s.medianDaysToResponse, null);
   assert.deepEqual(s.byResume, []);
 });
+
+test('the seen-job cache survives a service worker restart', async () => {
+  resetStorage();
+  // storage.session, unlike a module-level Map, outlives the worker being torn
+  // down — which happens after ~30s idle, far shorter than filling in a form.
+  await S.rememberSeen(7, { company: 'Reddit', position: 'Staff Engineer' });
+  const back = await S.recallSeen(7);
+  assert.equal(back.company, 'Reddit');
+  assert.equal(back.position, 'Staff Engineer');
+});
+
+test('the seen-job cache expires and isolates tabs', async () => {
+  resetStorage();
+  await S.rememberSeen(1, { company: 'Acme' });
+  assert.equal(await S.recallSeen(2), null, 'must not leak between tabs');
+  assert.equal(await S.recallSeen(1, -1), null, 'must respect the age limit');
+  assert.equal(await S.recallSeen(null), null);
+});

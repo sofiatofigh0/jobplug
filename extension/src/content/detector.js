@@ -16,11 +16,18 @@
   const { U, C, P, A } = root.JAT;
   const TAG = '__JAT_NET__';
 
-  const WEIGHTS = { boardApply: 60, genericApplyWithFile: 60, genericApply: 25, atsPost: 45, file: 25, click: 20, success: 50, atsHost: 10 };
+  const WEIGHTS = { boardApply: 60, genericApplyWithFile: 60, genericApply: 25, atsPost: 45, file: 25, click: 20, success: 50, successUrl: 55, atsHost: 10 };
   const THRESHOLD = 60;
   const REARM_MS = 90_000;
 
   const onAtsHost = !!P.boardFor(location.href);
+
+  // Declared before newState()/restore() run. These were previously defined
+  // below the `const state = restore() || newState()` line, so restore() hit the
+  // temporal dead zone on every page, threw, and had its own try/catch swallow
+  // the error — meaning evidence never actually survived a page load.
+  const STORE_KEY = '__jat_evidence__';
+  const CARRY_MS = 10 * 60_000;
 
   let lastFiredKey = '';
   let lastFiredAt = 0;
@@ -37,6 +44,7 @@
       armedAt: 0,
       fired: false,
       postOnAts: false,
+      job: null,          // { company, position, jdUrl } carried across pages
     };
     // Re-applied on every reset. Previously this was added once at load, so any
     // reset silently dropped it and every later score was 10 short.
@@ -68,9 +76,6 @@
   // and land on a freshly loaded confirmation page, which would otherwise start
   // from zero with no memory of the resume that was just uploaded.
   // ---------------------------------------------------------------------------
-  const STORE_KEY = '__jat_evidence__';
-  const CARRY_MS = 10 * 60_000;
-
   function persist() {
     try {
       sessionStorage.setItem(STORE_KEY, JSON.stringify({
@@ -78,6 +83,9 @@
         origin: location.origin,
         resume: state.resume,
         coverLetter: state.coverLetter,
+        // A confirmation page often no longer names the job, so carry what the
+        // form page knew about it.
+        job: state.job || null,
       }));
     } catch (_) { /* storage disabled or full — detection just loses its memory */ }
   }
@@ -95,6 +103,7 @@
         st.reasons.push('file.restored');
       }
       if (saved.coverLetter) st.coverLetter = saved.coverLetter;
+      if (saved.job) st.job = saved.job;
       return st;
     } catch { return null; }
   }
@@ -221,6 +230,23 @@
   // ---------------------------------------------------------------------------
   // Channel 4: confirmation copy on screen
   // ---------------------------------------------------------------------------
+  /**
+   * Landing on a confirmation URL is the one signal that needs nothing to have
+   * survived: no in-memory evidence, no instrumented request, no page copy in a
+   * language we happen to match. On a known ATS host it is treated as decisive.
+   */
+  let successUrlSeen = '';
+  function checkSuccessUrl() {
+    if (state.fired) return;
+    const path = location.pathname;
+    if (path === successUrlSeen) return;
+    if (!C.SUCCESS_URL_RE.test(path)) return;
+    // Guard against ordinary /thanks marketing pages on unrelated sites.
+    if (!onAtsHost && !state.resume) return;
+    successUrlSeen = path;
+    addEvidence('successUrl', WEIGHTS.successUrl, path.split('/').filter(Boolean).pop());
+  }
+
   function armSuccessObserver() {
     if (successObserver) return;
     if (!document.body) {
@@ -379,6 +405,8 @@
       if (!looksJob) return;
       const meta = P.extractPageMeta(document, location.href, A.run(document, location.href));
       if (!meta.company && !meta.position) return;
+      state.job = { company: meta.company || '', position: meta.position || '', jdUrl: meta.jdUrl || location.href };
+      persist();
       send('SEEN_JOB', { record: P.prune(meta) });
     } catch (_) {}
   }, 1200);
@@ -393,6 +421,7 @@
   // Lifecycle
   // ---------------------------------------------------------------------------
   function onReady() {
+    checkSuccessUrl();
     reportSeen();
     if (document.body) {
       // Some flows land straight on a confirmation page after a redirect.
@@ -418,6 +447,7 @@
     // Only a move to a genuinely different posting is a hard reset. Step
     // changes inside one apply flow must keep the evidence gathered so far.
     reset({ hard: differentPosting(before, location.href) });
+    checkSuccessUrl();
     reportSeen();
   };
 

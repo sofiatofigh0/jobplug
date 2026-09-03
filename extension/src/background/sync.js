@@ -32,7 +32,7 @@ export async function captureApplication(record, sender) {
   }
 
   const tabId = sender && sender.tab && sender.tab.id;
-  const seen = recallSeen(tabId);
+  const seen = await recallSeen(tabId);
   const merged = mergeSeen(seen, record);
 
   if (!merged.company && !merged.position) return { ok: false, reason: 'no identifying metadata' };

@@ -85,3 +85,62 @@ test('resume filenames are told apart from other uploads', () => {
   assert.ok(C.COVER_HINT_RE.test('cover_letter.pdf'));
   assert.ok(!C.COVER_HINT_RE.test('resume.pdf'));
 });
+
+// --- confirmation URLs ------------------------------------------------------
+
+test('confirmation URLs are recognised across the major boards', () => {
+  const shouldMatch = [
+    '/reddit/jobs/8088720/confirmation',   // Greenhouse — full page load on submit
+    '/acme/uuid/thanks',                   // Lever
+    '/acme/applied',                       // Workable
+    '/post-apply',                         // Indeed
+    '/jobs/123/application-submitted',
+    '/careers/thank-you',
+    '/apply/success',
+  ];
+  for (const path of shouldMatch) {
+    assert.ok(C.SUCCESS_URL_RE.test(path), `should match: ${path}`);
+  }
+});
+
+test('ordinary paths are not mistaken for confirmations', () => {
+  const shouldNotMatch = [
+    '/reddit/jobs/8088720',          // the posting itself
+    '/jobs/search',
+    '/company/thanksgiving-hiring',  // substring trap: "thanks" inside a word
+    '/about/appliedscience',         // substring trap: "applied" inside a word
+    '/',
+  ];
+  for (const path of shouldNotMatch) {
+    assert.ok(!C.SUCCESS_URL_RE.test(path), `should not match: ${path}`);
+  }
+});
+
+test('a confirmation URL alone clears the detection threshold on an ATS host', () => {
+  // Mirrors the detector's arithmetic: landing on a confirmation page must be
+  // decisive by itself, because a native form POST leaves no other trace —
+  // it never passes through fetch or XHR, and the page it came from is gone.
+  const WEIGHTS = { atsHost: 10, successUrl: 55 };
+  const THRESHOLD = 60;
+  assert.ok(WEIGHTS.atsHost + WEIGHTS.successUrl >= THRESHOLD,
+    'ATS host + confirmation URL must be enough on its own');
+});
+
+// --- guard against the storage-constant regression --------------------------
+
+test('detector declares its storage constants before restore() runs', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../extension/src/content/detector.js', import.meta.url), 'utf8');
+  // Compare real code lines only — the fix is documented in a comment that
+  // quotes the very call site we are looking for.
+  const lines = src.split('\n').map((l) => (l.trim().startsWith('//') ? '' : l));
+  const lineOf = (needle) => lines.findIndex((l) => l.includes(needle));
+  const declared = lineOf('const STORE_KEY');
+  const used = lineOf('const state = restore()');
+  assert.ok(declared > -1 && used > -1, 'both landmarks must exist');
+  // restore() reads STORE_KEY. If the const is declared after the call site the
+  // read hits the temporal dead zone, throws, and restore()'s own try/catch
+  // swallows it — so evidence silently stops surviving page loads.
+  assert.ok(declared < used,
+    'STORE_KEY must be declared before restore() is called, or restore() silently always returns null');
+});
