@@ -83,26 +83,59 @@ Search "Google Sheets API" and "Gmail API" in the console, or go straight there:
 
 ---
 
-## 4. Configure the OAuth consent screen
+## 4. Configure the consent screen
 
-<https://console.cloud.google.com/apis/credentials/consent>
+> **The old "OAuth consent screen" wizard no longer exists.** Google replaced it with
+> **Google Auth Platform**, which splits the same settings across four separate left-nav
+> pages. There is **no scopes step in the app-creation flow** — scopes moved to their own
+> page called **Data Access**. If you went looking for "Add or remove scopes" during setup
+> and couldn't find it, that's why.
 
-1. User type **External** → **Create**
-2. Fill in app name, your email as support contact, your email as developer contact
-3. **Scopes** → *Add or remove scopes* → add these three:
+| Setting | Page | Direct link |
+|---|---|---|
+| App name, support email | **Branding** | <https://console.cloud.google.com/auth/branding> |
+| Internal/External, **test users** | **Audience** | <https://console.cloud.google.com/auth/audience> |
+| **Scopes** | **Data Access** | <https://console.cloud.google.com/auth/scopes> |
+| OAuth client IDs | **Clients** | <https://console.cloud.google.com/auth/clients> |
 
-   ```
-   https://www.googleapis.com/auth/spreadsheets
-   https://www.googleapis.com/auth/gmail.readonly
-   https://www.googleapis.com/auth/userinfo.email
-   ```
+**a. Create the app** — <https://console.cloud.google.com/auth/overview>
 
-   `gmail.readonly` is a restricted scope. Google shows a warning about verification —
-   **ignore it**. Verification is only needed to publish an app for other people. As long
-   as you stay in *Testing* and add yourself as a test user, your own account works fine.
+Fill in app name, your email as user support contact, **Audience: External**, your email
+as the developer contact, accept the policy. It will not ask you about scopes. That's
+expected.
 
-4. **Test users** → *Add users* → add your own Gmail address
-5. Leave the publishing status as **Testing**
+**b. Add yourself as a test user** — **Audience** → *Test users* → **Add users** → your
+own Gmail address → **Save**.
+
+This step is the one that actually gates access. Leave publishing status as **Testing**.
+
+**c. Add the scopes** — **Data Access** → **Add or remove scopes**.
+
+The picker is paginated over hundreds of scopes, so use the *Filter* box and paste each
+one in full rather than scrolling:
+
+```
+https://www.googleapis.com/auth/spreadsheets
+https://www.googleapis.com/auth/gmail.readonly
+https://www.googleapis.com/auth/userinfo.email
+```
+
+Tick each, then **Update** at the bottom of the panel, then **Save** on the Data Access
+page. `spreadsheets` lands under *Sensitive scopes* and `gmail.readonly` under
+*Restricted scopes* — that's correct, not an error.
+
+If a scope doesn't appear in the picker, its API isn't enabled yet. Go back to step 3.
+
+`gmail.readonly` being restricted triggers a warning about verification. **Ignore it.**
+Verification only matters to publish an app for other people; in *Testing* with yourself
+as a test user, your own account works.
+
+> **If you still can't find Data Access:** the extension requests its scopes at runtime —
+> they're in `manifest.json` under `oauth2.scopes` and in the authorization request itself
+> — so the consent prompt is driven by what the code asks for, not by this list. Listing
+> them here is the correct thing to do, but if the UI is fighting you, go ahead and try
+> **Connect Google**; the consent screen should still ask for Sheets and Gmail. Being a
+> **test user** is the part you cannot skip.
 
 > **Note on Testing mode:** refresh tokens expire after 7 days in Testing. On Chrome
 > identity sign-in (option A below) this is invisible — Chrome re-prompts silently. On
@@ -206,6 +239,7 @@ If nothing appears:
 
 | Symptom | Cause & fix |
 |---|---|
+| Can't find where to add scopes | Google replaced the OAuth consent screen wizard with **Google Auth Platform**. Scopes are now on their own page: **Data Access** (<https://console.cloud.google.com/auth/scopes>). Test users moved to **Audience**. |
 | `bad client id` on connect | The manifest `client_id` doesn't match the extension ID, or you're on option A with a Web-application client. Re-check step 5. |
 | `redirect_uri_mismatch` | Option B, and the URI in Cloud Console doesn't exactly match the one printed in settings — usually a missing trailing slash. |
 | Connect succeeds, Sheets fails | The Sheets API isn't enabled on the project, or you connected before enabling it. Enable it, then Disconnect and reconnect. |
