@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>JobPlug settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+<main>
+  <h1>JobPlug</h1>
+  <p class="lede">Tracks every job you apply to, writes it to Google Sheets, and watches Gmail for interview invites.</p>
+
+  <section id="setup-card" class="hidden">
+    <h2>First-time setup</h2>
+    <p class="desc">Three steps, once.</p>
+    <ol class="steps">
+      <li><b>Create a Google Cloud project</b> and enable the <b>Google Sheets API</b> and <b>Gmail API</b>.</li>
+      <li><b>Make an OAuth client.</b> Easiest path is an <em>Chrome App</em> client using this extension's ID
+        (<code id="ext-id"></code>) — paste it into <code>manifest.json</code> under <code>oauth2.client_id</code>.
+        On Brave/Edge, or if you would rather not pin the extension ID, switch the
+        <b>Sign-in method</b> below to <em>Browser redirect</em> and paste a Web-application client ID instead.</li>
+      <li><b>Click Connect Google.</b> A spreadsheet is created for you automatically.</li>
+    </ol>
+    <p class="desc" style="margin-top:12px">Full walkthrough with screenshots-worth-of-detail is in <code>SETUP.md</code> in the repo.</p>
+  </section>
+
+  <section>
+    <h2>Google connection</h2>
+    <p class="desc">JobPlug needs Sheets (to write your tracker) and read-only Gmail (to spot replies). Nothing is sent anywhere else.</p>
+    <div id="conn-status" class="status">Checking…</div>
+
+    <div class="field">
+      <label for="authMode">Sign-in method</label>
+      <select id="authMode">
+        <option value="chrome">Chrome identity (recommended — needs a Chrome App OAuth client)</option>
+        <option value="webflow">Browser redirect / PKCE (works on Brave, Edge, unpacked installs)</option>
+      </select>
+    </div>
+
+    <div id="webflow-fields" class="hidden">
+      <div class="grid2">
+        <div class="field">
+          <label for="oauthClientId">OAuth client ID</label>
+          <input type="text" id="oauthClientId" placeholder="1234-abc.apps.googleusercontent.com">
+        </div>
+        <div class="field">
+          <label for="oauthClientSecret">Client secret <span class="muted">(only if your client type requires it)</span></label>
+          <input type="password" id="oauthClientSecret" placeholder="GOCSPX-…">
+        </div>
+      </div>
+      <p class="help">Add <code id="redirect-uri"></code> as an authorized redirect URI on that client.</p>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="btn-connect">Connect Google</button>
+      <button id="btn-test-gmail">Test Gmail access</button>
+      <button id="btn-disconnect">Disconnect</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Spreadsheet</h2>
+    <p class="desc">One spreadsheet with three tabs: <b>Applications</b>, <b>Dashboard</b>, and <b>Email Log</b>.</p>
+    <div class="field">
+      <label for="spreadsheetId">Spreadsheet ID</label>
+      <input type="text" id="spreadsheetId" placeholder="Created automatically when you connect">
+      <p class="help">Paste an existing ID to adopt a sheet you already have, or leave blank and one is created for you.
+        The ID is the long string in the URL between <code>/d/</code> and <code>/edit</code>.</p>
+    </div>
+    <div class="actions">
+      <button id="btn-open-sheet">Open spreadsheet</button>
+      <button id="btn-sync">Force full re-sync</button>
+      <button id="btn-export">Export CSV</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Detection</h2>
+    <p class="desc">How aggressively JobPlug logs what it sees.</p>
+    <div class="check">
+      <input type="checkbox" id="autoCapture">
+      <span class="t">Detect applications automatically
+        <small>Watches for resume uploads, submit clicks, apply requests and confirmation screens.</small></span>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="confirmBeforeLogging">
+      <span class="t">Ask me before logging
+        <small>Queues each detection in the popup instead of writing it straight to the sheet. Safer, but you have to click.</small></span>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="notifications">
+      <span class="t">Desktop notifications
+        <small>On capture, and when an interview invite is detected in Gmail.</small></span>
+    </div>
+    <div class="field">
+      <label for="excludeHosts">Never track on these sites</label>
+      <textarea id="excludeHosts" placeholder="internal.mycompany.com&#10;example.org"></textarea>
+      <p class="help">One hostname per line. Subdomains are covered automatically.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Gmail watching</h2>
+    <p class="desc">Read-only. JobPlug searches only for mail plausibly related to a company you applied to, then classifies it as an acknowledgement, assessment, interview invite, offer or rejection.</p>
+    <div class="check">
+      <input type="checkbox" id="gmailEnabled">
+      <span class="t">Watch Gmail for replies
+        <small>Turn this off and statuses stay whatever you set by hand.</small></span>
+    </div>
+    <div class="grid3">
+      <div class="field">
+        <label for="gmailPollMinutes">Check every (minutes)</label>
+        <input type="number" id="gmailPollMinutes" min="5" max="720" step="5">
+      </div>
+      <div class="field">
+        <label for="gmailLookbackDays">Look back (days)</label>
+        <input type="number" id="gmailLookbackDays" min="7" max="730" step="1">
+      </div>
+      <div class="field">
+        <label for="ghostAfterDays">Mark ghosted after (days)</label>
+        <input type="number" id="ghostAfterDays" min="7" max="180" step="1">
+      </div>
+    </div>
+    <div class="actions"><button id="btn-gmail-now">Scan Gmail now</button></div>
+  </section>
+
+  <section>
+    <h2>Resume versions</h2>
+    <p class="desc">Map filenames to readable names so the dashboard can tell you which resume actually gets replies. Matching is case-insensitive substring, or a regular expression.</p>
+    <div id="aliases"></div>
+    <div class="actions"><button id="btn-add-alias">Add mapping</button></div>
+  </section>
+
+  <section>
+    <h2>Company enrichment</h2>
+    <p class="desc">
+      Stage, valuation, total raised and headcount are read off the job page itself whenever the company states them.
+      Most postings don't, so those cells will often be blank until you fill them in — the popup and the sheet are both editable.
+      If you have access to a funding data API, point JobPlug at it and it will fill the gaps automatically.
+    </p>
+    <div class="check">
+      <input type="checkbox" id="enrichEnabled">
+      <span class="t">Call an enrichment API for missing company data
+        <small>Sends only the company name and domain.</small></span>
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label for="enrichEndpoint">Endpoint URL</label>
+        <input type="text" id="enrichEndpoint" placeholder="https://api.example.com/company?domain={domain}&name={name}">
+        <p class="help"><code>{domain}</code> and <code>{name}</code> are substituted.</p>
+      </div>
+      <div class="field">
+        <label for="enrichApiKey">API key</label>
+        <input type="password" id="enrichApiKey" placeholder="Sent as X-API-Key">
+      </div>
+    </div>
+    <p class="help">Expected response: JSON with any of <code>stage</code>, <code>valuation</code>, <code>totalRaised</code>, <code>lastRound</code>, <code>lastRoundDate</code>, <code>headcount</code>, <code>industry</code>.</p>
+  </section>
+
+  <section>
+    <h2>Local data</h2>
+    <p class="desc">Applications live in this browser and in your spreadsheet. Clearing local data does not touch the spreadsheet.</p>
+    <div class="actions">
+      <button class="danger" id="btn-clear">Clear local application data</button>
+    </div>
+  </section>
+
+  <div class="actions" style="position:sticky;bottom:0;padding:14px 0;background:linear-gradient(transparent,var(--surface-1) 40%)">
+    <button class="primary" id="btn-save">Save settings</button>
+    <span id="save-note" class="muted"></span>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+<script src="../common/constants.js"></script>
+<script src="../common/util.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

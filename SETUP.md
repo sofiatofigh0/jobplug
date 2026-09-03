@@ -1,0 +1,166 @@
+# Setup
+
+JobPlug talks to Google Sheets and Gmail as *you*, from your own browser. That means you
+need your own OAuth client — about ten minutes, once. Nothing here costs money; both APIs
+are free at the volumes this extension uses.
+
+---
+
+## 1. Load the extension
+
+1. `chrome://extensions` → turn on **Developer mode** (top right)
+2. **Load unpacked** → select the `extension/` folder from this repo
+3. Note the **extension ID** Chrome shows on the card — a 32-letter string.
+   You'll need it in step 4. It's also displayed on JobPlug's settings page.
+
+---
+
+## 2. Create a Google Cloud project
+
+1. Go to <https://console.cloud.google.com/projectcreate>
+2. Name it anything (`jobplug` is fine) → **Create**
+3. Make sure the new project is selected in the picker at the top
+
+---
+
+## 3. Enable the two APIs
+
+Search "Google Sheets API" and "Gmail API" in the console, or go straight there:
+
+- <https://console.cloud.google.com/apis/library/sheets.googleapis.com> → **Enable**
+- <https://console.cloud.google.com/apis/library/gmail.googleapis.com> → **Enable**
+
+---
+
+## 4. Configure the OAuth consent screen
+
+<https://console.cloud.google.com/apis/credentials/consent>
+
+1. User type **External** → **Create**
+2. Fill in app name, your email as support contact, your email as developer contact
+3. **Scopes** → *Add or remove scopes* → add these three:
+
+   ```
+   https://www.googleapis.com/auth/spreadsheets
+   https://www.googleapis.com/auth/gmail.readonly
+   https://www.googleapis.com/auth/userinfo.email
+   ```
+
+   `gmail.readonly` is a restricted scope. Google shows a warning about verification —
+   **ignore it**. Verification is only needed to publish an app for other people. As long
+   as you stay in *Testing* and add yourself as a test user, your own account works fine.
+
+4. **Test users** → *Add users* → add your own Gmail address
+5. Leave the publishing status as **Testing**
+
+> **Note on Testing mode:** refresh tokens expire after 7 days in Testing. On Chrome
+> identity sign-in (option A below) this is invisible — Chrome re-prompts silently. On
+> the PKCE path you may need to click **Connect Google** again about weekly. To stop that,
+> set the consent screen to *In production*; for a single-user app that's safe, Google just
+> shows an "unverified app" interstitial you click through once.
+
+---
+
+## 5. Create the OAuth client
+
+Pick **one** of these. Option A is smoother; option B works everywhere.
+
+### Option A — Chrome App client (recommended, Chrome only)
+
+1. <https://console.cloud.google.com/apis/credentials> → **Create credentials** →
+   **OAuth client ID**
+2. Application type: **Chrome app**
+3. **Item ID**: the extension ID from step 1
+4. Copy the client ID it gives you
+5. Open `extension/manifest.json` and replace the placeholder:
+
+   ```json
+   "oauth2": {
+     "client_id": "YOUR-CLIENT-ID.apps.googleusercontent.com",
+     "scopes": [ ... ]
+   }
+   ```
+
+6. Back on `chrome://extensions`, click **Reload** on the JobPlug card
+7. In JobPlug's settings, leave **Sign-in method** on *Chrome identity*
+
+**Keeping the extension ID stable.** An unpacked extension's ID is derived from its folder
+path, so it changes if you move the folder — and then the OAuth client stops matching. To
+pin it, pack the extension once (`chrome://extensions` → **Pack extension**), then add the
+public key from the generated `.pem` to `manifest.json` as a top-level `"key"` field. Or
+just don't move the folder.
+
+### Option B — Browser redirect / PKCE (Brave, Edge, or if you'd rather not pin the ID)
+
+1. **Create credentials** → **OAuth client ID** → Application type: **Web application**
+2. Under **Authorized redirect URIs**, add:
+
+   ```
+   https://<your-extension-id>.chromiumapp.org/
+   ```
+
+   JobPlug's settings page prints this exact URL — copy it from there, trailing slash included.
+3. Copy the client ID, and the client secret if one is issued
+4. In JobPlug's settings: **Sign-in method** → *Browser redirect / PKCE*, paste both, **Save settings**
+
+---
+
+## 6. Connect
+
+1. Open JobPlug's settings (the ⚙ in the popup, or the extension's *Options*)
+2. **Connect Google** → pick your account → grant both permissions
+3. Google will warn the app is unverified — **Advanced** → *Go to … (unsafe)*.
+   It's your own client ID, running your own copy of the code.
+4. A spreadsheet is created and opens in a new tab
+5. Click **Test Gmail access** to confirm the second scope actually took
+
+---
+
+## 7. Set up your resume versions
+
+This is the step that makes the dashboard worth reading.
+
+Settings → **Resume versions** → add a mapping per resume file:
+
+| filename contains | show as |
+|---|---|
+| `backend_v3` | Backend v3 |
+| `sofia_pm` | Product Manager |
+| `2026_generalist` | Generalist |
+
+Matching is case-insensitive substring, or a regular expression if you'd rather. Without
+mappings the raw filename is used, which still works — it's just noisier when you're
+comparing which version gets replies.
+
+---
+
+## Verifying it works
+
+1. Apply to any job on Greenhouse, Lever, Ashby or LinkedIn
+2. A desktop notification should appear within a second or two of submitting
+3. Open the popup — the application is in **Applications**
+4. Click **Sheet** — the row is there
+
+If nothing appears:
+
+- **Reload the extension** and reload the job page. Content scripts are only injected into
+  pages loaded *after* the extension was installed or reloaded.
+- Open the page's devtools console and look for `[JobPlug]` warnings.
+- Inspect the service worker: `chrome://extensions` → JobPlug → **service worker** →
+  Console. Auth and Sheets errors surface there.
+- Use the popup's **Add** tab or right-click → **Track this job application** as a fallback,
+  and open an issue with the site — an adapter is usually a few lines.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause & fix |
+|---|---|
+| `bad client id` on connect | The manifest `client_id` doesn't match the extension ID, or you're on option A with a Web-application client. Re-check step 5. |
+| `redirect_uri_mismatch` | Option B, and the URI in Cloud Console doesn't exactly match the one printed in settings — usually a missing trailing slash. |
+| Connect succeeds, Sheets fails | The Sheets API isn't enabled on the project, or you connected before enabling it. Enable it, then Disconnect and reconnect. |
+| **Test Gmail access** fails | `gmail.readonly` wasn't added to the consent screen, or wasn't granted at the consent prompt. Re-add it, then Disconnect and reconnect so a fresh grant is requested. |
+| Statuses never move off *Applied* | Gmail watching is off, or the company domain was guessed wrong. Check the **Email Log** tab — if the mail isn't there at all, it's a matching problem; fix the Company Domain cell in the Applications tab and it will match next sync. |
+| Same job logged twice | Two postings whose company or title differ in a way that survives normalisation. Delete one in the popup; it's removed from the sheet too. |
+| Nothing detected on one site | That site's apply flow doesn't match any known pattern. Use the right-click fallback, and see *Tuning detection* in the README. |

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>JobPlug</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <span class="brand"><span class="dot" id="conn-dot"></span> JobPlug</span>
+    <button class="ghost" id="btn-sheet" title="Open the Google Sheet">Sheet</button>
+    <button class="ghost" id="btn-sync" title="Sync now">Sync</button>
+    <button class="ghost" id="btn-options" title="Settings">⚙</button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-overview" aria-selected="true" data-panel="overview">Overview</button>
+    <button role="tab" id="tab-apps" aria-selected="false" data-panel="apps">Applications</button>
+    <button role="tab" id="tab-add" aria-selected="false" data-panel="add">Add</button>
+  </nav>
+
+  <section class="panel active" id="panel-overview">
+    <div id="alerts"></div>
+    <div id="overview-body"></div>
+  </section>
+
+  <section class="panel" id="panel-apps">
+    <input type="text" class="search" id="search" placeholder="Filter by company, role, resume or status…">
+    <div id="app-list" class="list"></div>
+  </section>
+
+  <section class="panel" id="panel-add">
+    <div class="banner">
+      <div class="grow">
+        <strong>Log an application by hand</strong>
+        Prefilled from the tab you have open. Use this when a site's apply flow slips past the detector.
+      </div>
+    </div>
+    <form id="add-form">
+      <div class="grid2">
+        <div class="field"><label for="f-company">Company</label><input type="text" id="f-company" required></div>
+        <div class="field"><label for="f-position">Position</label><input type="text" id="f-position" required></div>
+      </div>
+      <div class="field"><label for="f-jdUrl">Job description URL</label><input type="text" id="f-jdUrl"></div>
+      <div class="grid2">
+        <div class="field"><label for="f-appliedAt">Date applied</label><input type="date" id="f-appliedAt"></div>
+        <div class="field"><label for="f-resumeName">Resume used</label><input type="text" id="f-resumeName" placeholder="e.g. sofia_backend_v3.pdf"></div>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label for="f-workMode">Work mode</label>
+          <select id="f-workMode"><option value="">—</option><option>Remote</option><option>Hybrid</option><option>Onsite</option></select>
+        </div>
+        <div class="field"><label for="f-location">Location</label><input type="text" id="f-location"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="f-salaryMin">Comp min</label><input type="number" id="f-salaryMin"></div>
+        <div class="field"><label for="f-salaryMax">Comp max</label><input type="number" id="f-salaryMax"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="f-companyStage">Stage</label><input type="text" id="f-companyStage" placeholder="Series B"></div>
+        <div class="field"><label for="f-companyDomain">Company domain</label><input type="text" id="f-companyDomain" placeholder="acme.com"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="f-totalRaised">Total raised ($)</label><input type="number" id="f-totalRaised"></div>
+        <div class="field"><label for="f-valuation">Valuation ($)</label><input type="number" id="f-valuation"></div>
+      </div>
+      <div class="field"><label for="f-notes">Notes</label><textarea id="f-notes"></textarea></div>
+      <div class="row-actions">
+        <button type="button" class="ghost" id="btn-refill">Refill from tab</button>
+        <button type="submit" class="primary right">Save application</button>
+      </div>
+    </form>
+  </section>
+
+  <div class="toast" id="toast"></div>
+  <script src="../common/constants.js"></script>
+  <script src="../common/util.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

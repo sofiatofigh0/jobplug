@@ -1,0 +1,12 @@
+{
+  "name": "jobplug",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chrome extension that tracks job applications into Google Sheets and watches Gmail for interview invites.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "check": "node --experimental-vm-modules --no-warnings scripts/check-manifest.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
