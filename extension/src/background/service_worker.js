@@ -106,6 +106,24 @@ const handlers = {
     return captureApplication({ ...record, evidence }, sender);
   },
 
+  async DETECT_LOG({ entry }, sender) {
+    const { detectLog } = await chrome.storage.local.get('detectLog');
+    const log = detectLog || [];
+    log.unshift({ ...entry, tabUrl: (sender && sender.tab && sender.tab.url) || entry.url });
+    await chrome.storage.local.set({ detectLog: log.slice(0, 50) });
+    return { ok: true };
+  },
+
+  async GET_DETECT_LOG() {
+    const { detectLog } = await chrome.storage.local.get('detectLog');
+    return { log: detectLog || [] };
+  },
+
+  async CLEAR_DETECT_LOG() {
+    await chrome.storage.local.remove('detectLog');
+    return { ok: true };
+  },
+
   async SEEN_JOB({ record }, sender) {
     rememberSeen(sender && sender.tab && sender.tab.id, record);
     return { ok: true };

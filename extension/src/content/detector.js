@@ -16,17 +16,18 @@
   const { U, C, P, A } = root.JAT;
   const TAG = '__JAT_NET__';
 
-  const WEIGHTS = { boardApply: 60, genericApplyWithFile: 60, genericApply: 25, file: 25, click: 20, success: 50, atsHost: 10 };
+  const WEIGHTS = { boardApply: 60, genericApplyWithFile: 60, genericApply: 25, atsPost: 45, file: 25, click: 20, success: 50, atsHost: 10 };
   const THRESHOLD = 60;
   const REARM_MS = 90_000;
 
-  const state = newState();
+  const onAtsHost = !!P.boardFor(location.href);
+
   let lastFiredKey = '';
   let lastFiredAt = 0;
   let successObserver = null;
 
   function newState() {
-    return {
+    const st = {
       url: location.href,
       score: 0,
       reasons: [],
@@ -35,12 +36,67 @@
       netUrl: '',
       armedAt: 0,
       fired: false,
+      postOnAts: false,
     };
+    // Re-applied on every reset. Previously this was added once at load, so any
+    // reset silently dropped it and every later score was 10 short.
+    if (onAtsHost) { st.score += WEIGHTS.atsHost; st.reasons.push('atsHost'); }
+    return st;
   }
 
-  function reset() {
+  const state = restore() || newState();
+
+  /**
+   * Soft reset: keep what the user has already done in this flow.
+   *
+   * An apply flow routinely rewrites the URL — step params, a hash, a redirect
+   * to a confirmation page. Wiping the resume upload on every one of those was
+   * why multi-step Ashby and Greenhouse applications were never detected: by
+   * the time the submit fired, the evidence had been thrown away.
+   */
+  function reset({ hard = false } = {}) {
+    const carry = hard ? {} : { resume: state.resume, coverLetter: state.coverLetter };
     Object.assign(state, newState());
+    for (const [k, v] of Object.entries(carry)) if (v) state[k] = v;
+    if (state.resume) { state.score += WEIGHTS.file; state.reasons.push('file.carried'); }
     if (successObserver) { successObserver.disconnect(); successObserver = null; }
+    persist();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Evidence has to outlive a full page load: plenty of ATS flows POST the form
+  // and land on a freshly loaded confirmation page, which would otherwise start
+  // from zero with no memory of the resume that was just uploaded.
+  // ---------------------------------------------------------------------------
+  const STORE_KEY = '__jat_evidence__';
+  const CARRY_MS = 10 * 60_000;
+
+  function persist() {
+    try {
+      sessionStorage.setItem(STORE_KEY, JSON.stringify({
+        at: Date.now(),
+        origin: location.origin,
+        resume: state.resume,
+        coverLetter: state.coverLetter,
+      }));
+    } catch (_) { /* storage disabled or full — detection just loses its memory */ }
+  }
+
+  function restore() {
+    try {
+      const raw = sessionStorage.getItem(STORE_KEY);
+      if (!raw) return null;
+      const saved = JSON.parse(raw);
+      if (!saved || saved.origin !== location.origin || Date.now() - saved.at > CARRY_MS) return null;
+      const st = newState();
+      if (saved.resume) {
+        st.resume = saved.resume;
+        st.score += WEIGHTS.file;
+        st.reasons.push('file.restored');
+      }
+      if (saved.coverLetter) st.coverLetter = saved.coverLetter;
+      return st;
+    } catch { return null; }
   }
 
   function addEvidence(kind, weight, detail) {
@@ -49,10 +105,9 @@
     state.reasons.push(detail ? `${kind}(${detail})` : kind);
     if (state.score >= WEIGHTS.file && !successObserver) armSuccessObserver();
     maybeFire();
+    scheduleNearMiss();
   }
 
-  const onAtsHost = !!P.boardFor(location.href);
-  if (onAtsHost) { state.score += WEIGHTS.atsHost; state.reasons.push('atsHost'); }
 
   // ---------------------------------------------------------------------------
   // Channel 1 + 2: messages from the MAIN-world hook
@@ -78,13 +133,26 @@
       addEvidence('net.board', WEIGHTS.boardApply, board.id);
       return;
     }
+    const hasResume = !!state.resume || (d.files || []).some((f) => C.RESUME_FILE_RE.test(f.name || ''));
+
     if (C.GENERIC_APPLY_RE.some((re) => re.test(d.url))) {
       // A bare /apply POST is common on marketing sites; require a resume
       // alongside it before treating it as a real submission.
-      const hasResume = !!state.resume || (d.files || []).some((f) => C.RESUME_FILE_RE.test(f.name || ''));
       state.netUrl = d.url;
       addEvidence(hasResume ? 'net.generic+file' : 'net.generic',
         hasResume ? WEIGHTS.genericApplyWithFile : WEIGHTS.genericApply, U.hostOf(d.url));
+      return;
+    }
+
+    // Endpoint-shape fallback. Every ATS reworks its submit URL sooner or later,
+    // and a regex that has rotted fails silently — the application just never
+    // gets logged. So: once a resume has been attached, a successful write
+    // request on an ATS host is treated as evidence in its own right, whatever
+    // the URL happens to look like. Counted once per flow.
+    if (onAtsHost && hasResume && !state.postOnAts) {
+      state.postOnAts = true;
+      state.netUrl = d.url;
+      addEvidence('net.atsPost', WEIGHTS.atsPost, U.hostOf(d.url));
     }
   });
 
@@ -102,6 +170,7 @@
       }
       if (!state.resume || (C.RESUME_HINT_RE.test(name) && !C.RESUME_HINT_RE.test(state.resume.name))) {
         state.resume = { name, size: f.size || 0, type: f.type || '', field: f.field || '', label: f.label || '' };
+        persist();
         addEvidence('file.resume', WEIGHTS.file, name);
       }
     }
@@ -195,12 +264,55 @@
     lastFiredKey = key;
     lastFiredAt = Date.now();
 
+    clearTimeout(nearMissTimer);
     send('CAPTURE', {
       record: meta,
       evidence: { score: state.score, reasons: state.reasons.slice(0, 12), netUrl: state.netUrl },
     });
+    send('DETECT_LOG', {
+      entry: {
+        at: Date.now(), outcome: 'captured', url: location.href, host: U.hostOf(location.href),
+        board: meta.board || '', company: meta.company || '', position: meta.position || '',
+        score: state.score, threshold: THRESHOLD, reasons: state.reasons.slice(0, 12),
+        resume: meta.resumeName || '',
+      },
+    });
     // Allow a second, distinct application in the same tab later on.
     setTimeout(() => { if (state.fired) reset(); }, REARM_MS);
+  }
+
+  /**
+   * Report what was seen but did not add up.
+   *
+   * A missed application is otherwise silent — nothing appears anywhere, and
+   * there is no way to tell "the detector saw nothing" apart from "it saw a
+   * resume and a click but never a submit". Both need different fixes, so the
+   * near miss gets recorded with its evidence.
+   */
+  let nearMissTimer = null;
+  function scheduleNearMiss() {
+    clearTimeout(nearMissTimer);
+    if (state.fired || state.score <= 0) return;
+    nearMissTimer = setTimeout(() => {
+      if (state.fired || state.score >= THRESHOLD) return;
+      let meta = {};
+      try { meta = P.extractPageMeta(document, location.href, A.run(document, location.href)); } catch (_) {}
+      send('DETECT_LOG', {
+        entry: {
+          at: Date.now(),
+          outcome: 'near-miss',
+          url: location.href,
+          host: U.hostOf(location.href),
+          board: meta.board || '',
+          company: meta.company || '',
+          position: meta.position || '',
+          score: state.score,
+          threshold: THRESHOLD,
+          reasons: state.reasons.slice(0, 12),
+          resume: state.resume ? state.resume.name : '',
+        },
+      });
+    }, 15_000);
   }
 
   function dedupeKey(m) {
@@ -301,10 +413,25 @@
   let lastHref = location.href;
   const watchNav = () => {
     if (location.href === lastHref) return;
+    const before = lastHref;
     lastHref = location.href;
-    reset();
+    // Only a move to a genuinely different posting is a hard reset. Step
+    // changes inside one apply flow must keep the evidence gathered so far.
+    reset({ hard: differentPosting(before, location.href) });
     reportSeen();
   };
+
+  /** Two URLs describe different jobs, rather than two steps of the same one. */
+  function differentPosting(a, b) {
+    try {
+      const ua = new URL(a), ub = new URL(b);
+      if (ua.origin !== ub.origin) return true;
+      const idOf = (u) => (u.pathname.match(/\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}/i) || [''])[0];
+      const ia = idOf(ua), ib = idOf(ub);
+      if (ia && ib && ia !== ib) return true;
+      return false;
+    } catch { return true; }
+  }
   setInterval(watchNav, 800);
   window.addEventListener('popstate', watchNav);
 

@@ -135,6 +135,59 @@
   }
 
   // -------------------------------------------------------------------------
+  // Detection log
+  // -------------------------------------------------------------------------
+  /** Turn the evidence tags the detector emits into something readable. */
+  const REASON_TEXT = {
+    atsHost: 'on a known job board',
+    'file.resume': 'resume attached',
+    'file.carried': 'resume remembered from earlier in this flow',
+    'file.restored': 'resume remembered across a page load',
+    'file.cover': 'cover letter attached',
+    click: 'submit button clicked',
+    formSubmit: 'form submitted',
+    'net.board': 'apply request succeeded (known endpoint)',
+    'net.generic': 'apply-shaped request succeeded',
+    'net.generic+file': 'apply request with a resume succeeded',
+    'net.atsPost': 'write request succeeded on a job board',
+    successText: 'confirmation message appeared',
+    'successText.onload': 'confirmation page loaded',
+  };
+  const explainReason = (r) => {
+    const [tag, detail] = [r.replace(/\(.*/, ''), (r.match(/\((.*)\)/) || [])[1]];
+    const base = REASON_TEXT[tag] || tag;
+    return detail ? `${base} — ${detail}` : base;
+  };
+
+  let logCache = [];
+
+  async function renderLog() {
+    const { log } = await send('GET_DETECT_LOG');
+    logCache = log;
+    const box = $('#detect-log');
+    if (!log.length) {
+      box.innerHTML = '<p class="help">Nothing recorded yet. Apply to a job, then come back.</p>';
+      return;
+    }
+    box.innerHTML = log.map((e) => {
+      const ok = e.outcome === 'captured';
+      return `<div class="log-entry ${ok ? 'ok' : 'miss'}">
+        <div class="log-head">
+          <span class="pill ${ok ? 'good' : 'warn'}">${ok ? 'Logged' : 'Not logged'}</span>
+          <b>${esc(e.company || e.host || '—')}</b>
+          <span class="muted">${esc(e.position || '')}</span>
+          <span class="muted right">${new Date(e.at).toLocaleString()}</span>
+        </div>
+        <div class="log-meta">
+          score ${e.score} of ${e.threshold} needed${e.board ? ` · ${esc(e.board)}` : ''}${e.resume ? ` · ${esc(e.resume)}` : ' · no resume seen'}
+        </div>
+        <ul class="log-reasons">${(e.reasons || []).map((r) => `<li>${esc(explainReason(r))}</li>`).join('') || '<li class="muted">no evidence gathered</li>'}</ul>
+        <div class="log-url muted">${esc(e.url)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // -------------------------------------------------------------------------
   // Wiring
   // -------------------------------------------------------------------------
   document.addEventListener('DOMContentLoaded', async () => {
@@ -157,6 +210,15 @@
     }));
     $('#btn-add-alias').addEventListener('click', () => renderAliases([...collectAliases(), { match: '', label: '' }]));
     $('#btn-save').addEventListener('click', () => save().catch((e) => toast(e.message)));
+    $('#btn-refresh-log').addEventListener('click', () => renderLog().catch((e) => toast(e.message)));
+    $('#btn-clear-log').addEventListener('click', async () => {
+      await send('CLEAR_DETECT_LOG'); await renderLog(); toast('Detection log cleared.');
+    });
+    $('#btn-copy-log').addEventListener('click', async () => {
+      const text = JSON.stringify(logCache.slice(0, 15), null, 2);
+      try { await navigator.clipboard.writeText(text); toast('Copied — paste this into a bug report.'); }
+      catch { toast('Could not copy automatically.'); }
+    });
 
     $('#btn-connect').addEventListener('click', async () => {
       const btn = $('#btn-connect');
@@ -238,5 +300,6 @@
     });
 
     try { await load(); } catch (err) { toast(err.message); }
+    renderLog().catch(() => {});
   });
 })();
