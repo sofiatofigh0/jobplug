@@ -55,14 +55,63 @@ instead of the path. It then stays the same wherever you unzip it, on every mach
 the changed `manifest.json` and the ID follows you around. Run it **before** step 2 — the
 script prints the ID you'll need there.
 
+**No Node installed?** `openssl` ships with macOS and Linux and does the same job:
+
+```bash
+cd path/to/extension                     # the folder containing manifest.json
+
+openssl genrsa 2048 2>/dev/null | openssl pkcs8 -topk8 -nocrypt -out ../key.pem
+
+# The value to put in manifest.json:
+openssl rsa -in ../key.pem -pubout -outform DER 2>/dev/null | base64 | tr -d '\n'
+
+# The extension ID that key produces:
+openssl rsa -in ../key.pem -pubout -outform DER 2>/dev/null \
+  | shasum -a 256 | cut -c1-32 | tr '0-9a-f' 'a-p'
+```
+
+Open `manifest.json` in any text editor and add the base64 string as a top-level `key`,
+right after `"version"`:
+
+```json
+{
+  "manifest_version": 3,
+  "name": "JobPlug — Job Application Tracker",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A...",
+  ...
+}
+```
+
+Reload the extension. The ID on the card should now match what the second command printed,
+and it will stay that way wherever you move the folder. Keep `key.pem` outside the
+extension folder so it never ends up in a package.
+
 ---
 
 ## 1. Load the extension
 
 1. `chrome://extensions` → turn on **Developer mode** (top right)
 2. **Load unpacked** → select the `extension/` folder
-3. Note the **extension ID** Chrome shows on the card — a 32-letter string.
-   You'll need it in step 5. It's also displayed on JobPlug's settings page.
+3. **Move the folder to where it will live permanently, before going further.**
+   Chrome derives the extension ID from the folder path, and both OAuth options bake
+   that ID in. `~/Downloads` is a bad home — people empty it. Move it now (e.g. to
+   `~/Applications/jobplug/` or `~/dev/jobplug/`), then **Remove extension** and
+   **Load unpacked** again from the new location. Or pin the ID — see below.
+4. Note the **extension ID**. It's the 32-letter string on the extension's card, and
+   also in the address bar when you click **Details**:
+   `chrome://extensions/?id=`**`<this part>`**. You need it in step 5.
+
+### Finding JobPlug's own settings
+
+Two ways, and neither is obvious the first time:
+
+- On the extension's **Details** page, scroll to **Extension options** and click it.
+- Or turn on **Pin to toolbar** on that same page, then click the JobPlug icon in the
+  toolbar and hit the **⚙** in the popup header.
+
+That settings page is where *Sign-in method*, **Connect Google**, resume versions and
+everything else lives.
 
 ---
 
