@@ -39,7 +39,13 @@ runs the consistency check first so you never download a broken build.
 There is **no build step** — the `extension/` folder loads exactly as it is. Node is only
 needed for `npm test`, `npm run check`, `npm run pin-id` and `npm run package`.
 
-### Pin the extension ID first if the folder will ever move
+### Optional: pin the extension ID
+
+**Skip this on a first run.** Getting connected does not need it. Come back only if you
+move the extension folder, re-download to a different path, or set it up on a second
+machine — all of which change the ID and break the OAuth client you registered.
+
+If you already know the folder will move, doing it now saves fixing the client twice.
 
 Chrome derives an unpacked extension's ID from its folder path. Both OAuth options below
 bake that ID in — the Chrome-app client is bound to it, and the PKCE redirect URI contains
@@ -55,37 +61,29 @@ instead of the path. It then stays the same wherever you unzip it, on every mach
 the changed `manifest.json` and the ID follows you around. Run it **before** step 2 — the
 script prints the ID you'll need there.
 
-**No Node installed?** `openssl` ships with macOS and Linux and does the same job:
+**No Node installed?** `openssl` ships with macOS and Linux. Paste this whole block into
+Terminal — it makes the key, edits `manifest.json` for you, and prints the new ID. No
+hand-editing of JSON:
 
 ```bash
-cd path/to/extension                     # the folder containing manifest.json
+cd path/to/extension        # the folder containing manifest.json
 
-openssl genrsa 2048 2>/dev/null | openssl pkcs8 -topk8 -nocrypt -out ../key.pem
+openssl genrsa 2048 2>/dev/null | openssl pkcs8 -topk8 -nocrypt -out ../jobplug-key.pem
 
-# The value to put in manifest.json:
-openssl rsa -in ../key.pem -pubout -outform DER 2>/dev/null | base64 | tr -d '\n'
+KEY=$(openssl rsa -in ../jobplug-key.pem -pubout -outform DER 2>/dev/null | base64 | tr -d '\n')
+awk -v k="$KEY" '/"version":/ && !d { print; print "  \"key\": \"" k "\","; d=1; next } { print }' \
+  manifest.json > manifest.tmp && mv manifest.tmp manifest.json
 
-# The extension ID that key produces:
-openssl rsa -in ../key.pem -pubout -outform DER 2>/dev/null \
+echo "New extension ID:"
+openssl rsa -in ../jobplug-key.pem -pubout -outform DER 2>/dev/null \
   | shasum -a 256 | cut -c1-32 | tr '0-9a-f' 'a-p'
 ```
 
-Open `manifest.json` in any text editor and add the base64 string as a top-level `key`,
-right after `"version"`:
+Reload the extension at `chrome://extensions`. The ID on the card now matches what that
+printed, and stays that way wherever the folder goes. Register **that** ID on your OAuth
+client. `jobplug-key.pem` is written one level above the extension folder so it never ends
+up inside a package; you only need it to build a `.crx`.
 
-```json
-{
-  "manifest_version": 3,
-  "name": "JobPlug — Job Application Tracker",
-  "version": "1.0.0",
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A...",
-  ...
-}
-```
-
-Reload the extension. The ID on the card should now match what the second command printed,
-and it will stay that way wherever you move the folder. Keep `key.pem` outside the
-extension folder so it never ends up in a package.
 
 ---
 
