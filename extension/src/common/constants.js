@@ -120,7 +120,7 @@
     {
       id: 'greenhouse', label: 'Greenhouse',
       hosts: ['boards.greenhouse.io', 'job-boards.greenhouse.io', 'my.greenhouse.io', 'greenhouse.io'],
-      applyRe: [/greenhouse\.io\/.*\/applications?(\?|$)/i, /api\.greenhouse\.io\/v\d\/.*applications/i, /\/embed\/job_app/i],
+      applyRe: [/greenhouse\.io\/.*(applications?|job_app|job_application|application_form)/i, /api\.greenhouse\.io\/.*(applications?|boards)/i, /greenhouse\.io\/.*\/jobs\/\d+/i],
       mailDomains: ['greenhouse.io', 'us.greenhouse-mail.io', 'greenhouse-mail.io'],
     },
     {
@@ -132,7 +132,7 @@
     {
       id: 'ashby', label: 'Ashby',
       hosts: ['jobs.ashbyhq.com', 'ashbyhq.com'],
-      applyRe: [/ashbyhq\.com\/.*(applicationForm\.submit|application\/submit|submitApplication)/i, /api\.ashbyhq\.com\/.*apply/i],
+      applyRe: [/ashbyhq\.com\/.*(applicationForm\.submit|application\/submit|submitApplication|non-user-graphql|apply)/i, /ashbyhq\.com\/api\//i],
       mailDomains: ['ashbyhq.com', 'mail.ashbyhq.com'],
     },
     {

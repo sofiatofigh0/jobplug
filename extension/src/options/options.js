@@ -9,7 +9,7 @@
       chrome.runtime.sendMessage({ type, payload }, (res) => {
         if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
         if (!res) return reject(new Error('No response from the background service.'));
-        if (!res.ok) return reject(Object.assign(new Error(res.error), { needsAuth: res.needsAuth }));
+        if (!res.ok) return reject(Object.assign(new Error(res.error), { needsAuth: res.needsAuth, explain: res.explain }));
         resolve(res.data);
       });
     });
@@ -26,6 +26,31 @@
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  /** Chrome's OAuth errors are unactionable on their own; auth.js attaches a fix. */
+  function showAuthError(err) {
+    const box = $('#conn-error');
+    const ex = err && err.explain;
+    if (!ex) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    box.innerHTML = `<strong>${esc(ex.title)}</strong>` +
+      (ex.steps.length ? `<ul>${ex.steps.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function renderIdentity() {
+    const d = await send('DIAGNOSTICS');
+    $('#ext-id-live').textContent = d.extensionId;
+    $('#redirect-uri-live').textContent = d.redirectUri;
+    const placeholder = /REPLACE_WITH/i.test(d.manifestClientId);
+    $('#manifest-client').textContent = placeholder
+      ? 'not set (placeholder)'
+      : (d.manifestClientId || 'not set');
+    $('#id-stability').textContent = d.hasPinnedKey
+      ? 'This ID is pinned by a key in manifest.json, so it stays the same wherever the folder lives.'
+      : 'This ID is derived from the folder path — it changes if you move the extension folder, which breaks the OAuth client. Run npm run pin-id (or the openssl recipe in SETUP.md) to fix it permanently.';
+    return d;
+  }
 
   // -------------------------------------------------------------------------
   // Resume alias editor
@@ -63,6 +88,7 @@
   async function load() {
     const state = await send('GET_STATE');
     settings = state.settings;
+    await renderIdentity().catch(() => {});
 
     CHECKS.forEach((k) => { $('#' + k).checked = !!settings[k]; });
     NUMS.forEach((k) => { $('#' + k).value = settings[k]; });
@@ -85,7 +111,12 @@
   }
 
   function toggleWebflow() {
-    $('#webflow-fields').classList.toggle('hidden', $('#authMode').value !== 'webflow');
+    // The two sign-in methods need different OAuth client *types*, and read the
+    // client ID from different places. Showing both at once is how people end up
+    // pasting a Chrome-Extension client into the PKCE fields.
+    const webflow = $('#authMode').value === 'webflow';
+    $('#webflow-fields').classList.toggle('hidden', !webflow);
+    $('#chrome-fields').classList.toggle('hidden', webflow);
   }
 
   async function save() {
@@ -104,19 +135,90 @@
   }
 
   // -------------------------------------------------------------------------
+  // Detection log
+  // -------------------------------------------------------------------------
+  /** Turn the evidence tags the detector emits into something readable. */
+  const REASON_TEXT = {
+    atsHost: 'on a known job board',
+    'file.resume': 'resume attached',
+    'file.carried': 'resume remembered from earlier in this flow',
+    'file.restored': 'resume remembered across a page load',
+    'file.cover': 'cover letter attached',
+    click: 'submit button clicked',
+    formSubmit: 'form submitted',
+    'net.board': 'apply request succeeded (known endpoint)',
+    'net.generic': 'apply-shaped request succeeded',
+    'net.generic+file': 'apply request with a resume succeeded',
+    'net.atsPost': 'write request succeeded on a job board',
+    successText: 'confirmation message appeared',
+    'successText.onload': 'confirmation page loaded',
+  };
+  const explainReason = (r) => {
+    const [tag, detail] = [r.replace(/\(.*/, ''), (r.match(/\((.*)\)/) || [])[1]];
+    const base = REASON_TEXT[tag] || tag;
+    return detail ? `${base} — ${detail}` : base;
+  };
+
+  let logCache = [];
+
+  async function renderLog() {
+    const { log } = await send('GET_DETECT_LOG');
+    logCache = log;
+    const box = $('#detect-log');
+    if (!log.length) {
+      box.innerHTML = '<p class="help">Nothing recorded yet. Apply to a job, then come back.</p>';
+      return;
+    }
+    box.innerHTML = log.map((e) => {
+      const ok = e.outcome === 'captured';
+      return `<div class="log-entry ${ok ? 'ok' : 'miss'}">
+        <div class="log-head">
+          <span class="pill ${ok ? 'good' : 'warn'}">${ok ? 'Logged' : 'Not logged'}</span>
+          <b>${esc(e.company || e.host || '—')}</b>
+          <span class="muted">${esc(e.position || '')}</span>
+          <span class="muted right">${new Date(e.at).toLocaleString()}</span>
+        </div>
+        <div class="log-meta">
+          score ${e.score} of ${e.threshold} needed${e.board ? ` · ${esc(e.board)}` : ''}${e.resume ? ` · ${esc(e.resume)}` : ' · no resume seen'}
+        </div>
+        <ul class="log-reasons">${(e.reasons || []).map((r) => `<li>${esc(explainReason(r))}</li>`).join('') || '<li class="muted">no evidence gathered</li>'}</ul>
+        <div class="log-url muted">${esc(e.url)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // -------------------------------------------------------------------------
   // Wiring
   // -------------------------------------------------------------------------
   document.addEventListener('DOMContentLoaded', async () => {
-    $('#ext-id').textContent = chrome.runtime.id;
-    $('#redirect-uri').textContent = chrome.identity.getRedirectURL();
+    const legacyId = $('#ext-id');
+    if (legacyId) legacyId.textContent = chrome.runtime.id;
+    const legacyUri = $('#redirect-uri');
+    if (legacyUri) legacyUri.textContent = chrome.identity.getRedirectURL();
 
     if (new URLSearchParams(location.search).get('welcome')) {
       $('#setup-card').classList.remove('hidden');
     }
 
     $('#authMode').addEventListener('change', toggleWebflow);
+
+    $$('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+      const text = $('#' + b.dataset.copy).textContent;
+      try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+      catch { b.textContent = 'Select it'; }
+      setTimeout(() => { b.textContent = 'Copy'; }, 1800);
+    }));
     $('#btn-add-alias').addEventListener('click', () => renderAliases([...collectAliases(), { match: '', label: '' }]));
     $('#btn-save').addEventListener('click', () => save().catch((e) => toast(e.message)));
+    $('#btn-refresh-log').addEventListener('click', () => renderLog().catch((e) => toast(e.message)));
+    $('#btn-clear-log').addEventListener('click', async () => {
+      await send('CLEAR_DETECT_LOG'); await renderLog(); toast('Detection log cleared.');
+    });
+    $('#btn-copy-log').addEventListener('click', async () => {
+      const text = JSON.stringify(logCache.slice(0, 15), null, 2);
+      try { await navigator.clipboard.writeText(text); toast('Copied — paste this into a bug report.'); }
+      catch { toast('Could not copy automatically.'); }
+    });
 
     $('#btn-connect').addEventListener('click', async () => {
       const btn = $('#btn-connect');
@@ -124,11 +226,13 @@
       try {
         await save();
         const res = await send('SIGN_IN');
+        $('#conn-error').classList.add('hidden');
         toast('Connected. Spreadsheet ready.');
         if (res.spreadsheetUrl) window.open(res.spreadsheetUrl, '_blank');
         await load();
       } catch (err) {
         toast(err.message);
+        showAuthError(err);
       } finally {
         btn.disabled = false; btn.textContent = 'Connect Google';
       }
@@ -196,5 +300,6 @@
     });
 
     try { await load(); } catch (err) { toast(err.message); }
+    renderLog().catch(() => {});
   });
 })();

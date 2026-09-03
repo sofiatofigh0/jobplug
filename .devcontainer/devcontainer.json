@@ -1,0 +1,12 @@
+{
+  "name": "JobPlug",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "postCreateCommand": "npm test",
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint"],
+      "settings": { "files.eol": "\n" }
+    }
+  },
+  "portsAttributes": {}
+}

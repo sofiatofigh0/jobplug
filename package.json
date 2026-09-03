@@ -6,7 +6,11 @@
   "type": "module",
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",
-    "check": "node --experimental-vm-modules --no-warnings scripts/check-manifest.mjs"
+    "check": "node --experimental-vm-modules --no-warnings scripts/check-manifest.mjs",
+    "pin-id": "node scripts/pin-extension-id.mjs",
+    "package": "node --experimental-vm-modules --no-warnings scripts/check-manifest.mjs && node scripts/package.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

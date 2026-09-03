@@ -6,12 +6,110 @@ are free at the volumes this extension uses.
 
 ---
 
+## 0. Get the files onto the machine running Chrome
+
+**A Chrome extension cannot be loaded from a remote container.** *Load unpacked* opens a
+file picker on the computer running Chrome, and it cannot see a Codespace, a devcontainer,
+or an SSH host. Wherever you edit the code, the folder has to exist locally to load it.
+
+Pick whichever applies:
+
+**No tooling at all** — you don't need git, Node, or a terminal to *use* this:
+
+> Download <https://github.com/sofiatofigh0/jobplug/archive/refs/heads/claude/job-app-tracker-extension-dajhwt.zip>,
+> unzip it, and use the `extension/` folder inside. Skip to step 1.
+
+**Local clone** — best if you'll be changing code:
+
+```bash
+git clone -b claude/job-app-tracker-extension-dajhwt https://github.com/sofiatofigh0/jobplug.git
+```
+
+**GitHub Codespaces / remote devcontainer** — edit remotely, run locally:
+
+```bash
+npm run pin-id      # once: fixes the extension ID so it survives re-downloading
+npm run package     # writes jobplug-extension.zip
+```
+
+Right-click `jobplug-extension.zip` in the file explorer → **Download**, unzip it locally,
+and load that folder. One file beats downloading a 25-file tree, and `npm run package`
+runs the consistency check first so you never download a broken build.
+
+There is **no build step** — the `extension/` folder loads exactly as it is. Node is only
+needed for `npm test`, `npm run check`, `npm run pin-id` and `npm run package`.
+
+### Optional: pin the extension ID
+
+**Skip this on a first run.** Getting connected does not need it. Come back only if you
+move the extension folder, re-download to a different path, or set it up on a second
+machine — all of which change the ID and break the OAuth client you registered.
+
+If you already know the folder will move, doing it now saves fixing the client twice.
+
+Chrome derives an unpacked extension's ID from its folder path. Both OAuth options below
+bake that ID in — the Chrome-app client is bound to it, and the PKCE redirect URI contains
+it — so moving the folder, or unzipping a fresh download somewhere else, silently breaks
+sign-in.
+
+```bash
+npm run pin-id
+```
+
+This writes a public key into `manifest.json`, which makes the ID a function of that key
+instead of the path. It then stays the same wherever you unzip it, on every machine. Commit
+the changed `manifest.json` and the ID follows you around. Run it **before** step 2 — the
+script prints the ID you'll need there.
+
+**No Node installed?** `openssl` ships with macOS and Linux. Paste this whole block into
+Terminal — it makes the key, edits `manifest.json` for you, and prints the new ID. No
+hand-editing of JSON:
+
+```bash
+cd path/to/extension        # the folder containing manifest.json
+
+openssl genrsa 2048 2>/dev/null | openssl pkcs8 -topk8 -nocrypt -out ../jobplug-key.pem
+
+KEY=$(openssl rsa -in ../jobplug-key.pem -pubout -outform DER 2>/dev/null | base64 | tr -d '\n')
+awk -v k="$KEY" '/"version":/ && !d { print; print "  \"key\": \"" k "\","; d=1; next } { print }' \
+  manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+
+echo "New extension ID:"
+openssl rsa -in ../jobplug-key.pem -pubout -outform DER 2>/dev/null \
+  | shasum -a 256 | cut -c1-32 | tr '0-9a-f' 'a-p'
+```
+
+Reload the extension at `chrome://extensions`. The ID on the card now matches what that
+printed, and stays that way wherever the folder goes. Register **that** ID on your OAuth
+client. `jobplug-key.pem` is written one level above the extension folder so it never ends
+up inside a package; you only need it to build a `.crx`.
+
+
+---
+
 ## 1. Load the extension
 
 1. `chrome://extensions` → turn on **Developer mode** (top right)
-2. **Load unpacked** → select the `extension/` folder from this repo
-3. Note the **extension ID** Chrome shows on the card — a 32-letter string.
-   You'll need it in step 4. It's also displayed on JobPlug's settings page.
+2. **Load unpacked** → select the `extension/` folder
+3. **Move the folder to where it will live permanently, before going further.**
+   Chrome derives the extension ID from the folder path, and both OAuth options bake
+   that ID in. `~/Downloads` is a bad home — people empty it. Move it now (e.g. to
+   `~/Applications/jobplug/` or `~/dev/jobplug/`), then **Remove extension** and
+   **Load unpacked** again from the new location. Or pin the ID — see below.
+4. Note the **extension ID**. It's the 32-letter string on the extension's card, and
+   also in the address bar when you click **Details**:
+   `chrome://extensions/?id=`**`<this part>`**. You need it in step 5.
+
+### Finding JobPlug's own settings
+
+Two ways, and neither is obvious the first time:
+
+- On the extension's **Details** page, scroll to **Extension options** and click it.
+- Or turn on **Pin to toolbar** on that same page, then click the JobPlug icon in the
+  toolbar and hit the **⚙** in the popup header.
+
+That settings page is where *Sign-in method*, **Connect Google**, resume versions and
+everything else lives.
 
 ---
 
@@ -32,26 +130,59 @@ Search "Google Sheets API" and "Gmail API" in the console, or go straight there:
 
 ---
 
-## 4. Configure the OAuth consent screen
+## 4. Configure the consent screen
 
-<https://console.cloud.google.com/apis/credentials/consent>
+> **The old "OAuth consent screen" wizard no longer exists.** Google replaced it with
+> **Google Auth Platform**, which splits the same settings across four separate left-nav
+> pages. There is **no scopes step in the app-creation flow** — scopes moved to their own
+> page called **Data Access**. If you went looking for "Add or remove scopes" during setup
+> and couldn't find it, that's why.
 
-1. User type **External** → **Create**
-2. Fill in app name, your email as support contact, your email as developer contact
-3. **Scopes** → *Add or remove scopes* → add these three:
+| Setting | Page | Direct link |
+|---|---|---|
+| App name, support email | **Branding** | <https://console.cloud.google.com/auth/branding> |
+| Internal/External, **test users** | **Audience** | <https://console.cloud.google.com/auth/audience> |
+| **Scopes** | **Data Access** | <https://console.cloud.google.com/auth/scopes> |
+| OAuth client IDs | **Clients** | <https://console.cloud.google.com/auth/clients> |
 
-   ```
-   https://www.googleapis.com/auth/spreadsheets
-   https://www.googleapis.com/auth/gmail.readonly
-   https://www.googleapis.com/auth/userinfo.email
-   ```
+**a. Create the app** — <https://console.cloud.google.com/auth/overview>
 
-   `gmail.readonly` is a restricted scope. Google shows a warning about verification —
-   **ignore it**. Verification is only needed to publish an app for other people. As long
-   as you stay in *Testing* and add yourself as a test user, your own account works fine.
+Fill in app name, your email as user support contact, **Audience: External**, your email
+as the developer contact, accept the policy. It will not ask you about scopes. That's
+expected.
 
-4. **Test users** → *Add users* → add your own Gmail address
-5. Leave the publishing status as **Testing**
+**b. Add yourself as a test user** — **Audience** → *Test users* → **Add users** → your
+own Gmail address → **Save**.
+
+This step is the one that actually gates access. Leave publishing status as **Testing**.
+
+**c. Add the scopes** — **Data Access** → **Add or remove scopes**.
+
+The picker is paginated over hundreds of scopes, so use the *Filter* box and paste each
+one in full rather than scrolling:
+
+```
+https://www.googleapis.com/auth/spreadsheets
+https://www.googleapis.com/auth/gmail.readonly
+https://www.googleapis.com/auth/userinfo.email
+```
+
+Tick each, then **Update** at the bottom of the panel, then **Save** on the Data Access
+page. `spreadsheets` lands under *Sensitive scopes* and `gmail.readonly` under
+*Restricted scopes* — that's correct, not an error.
+
+If a scope doesn't appear in the picker, its API isn't enabled yet. Go back to step 3.
+
+`gmail.readonly` being restricted triggers a warning about verification. **Ignore it.**
+Verification only matters to publish an app for other people; in *Testing* with yourself
+as a test user, your own account works.
+
+> **If you still can't find Data Access:** the extension requests its scopes at runtime —
+> they're in `manifest.json` under `oauth2.scopes` and in the authorization request itself
+> — so the consent prompt is driven by what the code asks for, not by this list. Listing
+> them here is the correct thing to do, but if the UI is fighting you, go ahead and try
+> **Connect Google**; the consent screen should still ask for Sheets and Gmail. Being a
+> **test user** is the part you cannot skip.
 
 > **Note on Testing mode:** refresh tokens expire after 7 days in Testing. On Chrome
 > identity sign-in (option A below) this is invisible — Chrome re-prompts silently. On
@@ -84,11 +215,9 @@ Pick **one** of these. Option A is smoother; option B works everywhere.
 6. Back on `chrome://extensions`, click **Reload** on the JobPlug card
 7. In JobPlug's settings, leave **Sign-in method** on *Chrome identity*
 
-**Keeping the extension ID stable.** An unpacked extension's ID is derived from its folder
-path, so it changes if you move the folder — and then the OAuth client stops matching. To
-pin it, pack the extension once (`chrome://extensions` → **Pack extension**), then add the
-public key from the generated `.pem` to `manifest.json` as a top-level `"key"` field. Or
-just don't move the folder.
+**Keeping the extension ID stable.** If you skipped `npm run pin-id` in step 0, the ID is
+derived from the folder path and changes if you move the folder — at which point this OAuth
+client stops matching. Run `npm run pin-id` and reload the extension to fix it permanently.
 
 ### Option B — Browser redirect / PKCE (Brave, Edge, or if you'd rather not pin the ID)
 
@@ -157,6 +286,7 @@ If nothing appears:
 
 | Symptom | Cause & fix |
 |---|---|
+| Can't find where to add scopes | Google replaced the OAuth consent screen wizard with **Google Auth Platform**. Scopes are now on their own page: **Data Access** (<https://console.cloud.google.com/auth/scopes>). Test users moved to **Audience**. |
 | `bad client id` on connect | The manifest `client_id` doesn't match the extension ID, or you're on option A with a Web-application client. Re-check step 5. |
 | `redirect_uri_mismatch` | Option B, and the URI in Cloud Console doesn't exactly match the one printed in settings — usually a missing trailing slash. |
 | Connect succeeds, Sheets fails | The Sheets API isn't enabled on the project, or you connected before enabling it. Enable it, then Disconnect and reconnect. |

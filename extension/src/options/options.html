@@ -28,6 +28,25 @@
     <h2>Google connection</h2>
     <p class="desc">JobPlug needs Sheets (to write your tracker) and read-only Gmail (to spot replies). Nothing is sent anywhere else.</p>
     <div id="conn-status" class="status">Checking…</div>
+    <div id="conn-error" class="status bad hidden"></div>
+
+    <div class="identity">
+      <div class="identity-row">
+        <span class="identity-label">This extension's ID</span>
+        <code id="ext-id-live"></code>
+        <button type="button" class="copy" data-copy="ext-id-live">Copy</button>
+      </div>
+      <div class="identity-row">
+        <span class="identity-label">Redirect URI</span>
+        <code id="redirect-uri-live"></code>
+        <button type="button" class="copy" data-copy="redirect-uri-live">Copy</button>
+      </div>
+      <div class="identity-row">
+        <span class="identity-label">Client ID in manifest</span>
+        <code id="manifest-client"></code>
+      </div>
+      <p class="help" id="id-stability"></p>
+    </div>
 
     <div class="field">
       <label for="authMode">Sign-in method</label>
@@ -38,9 +57,17 @@
     </div>
 
     <div id="webflow-fields" class="hidden">
+      <div class="status warn">
+        <strong>This needs a <em>Web application</em> OAuth client.</strong>
+        A <em>Chrome Extension</em> client will not work here — that type has no
+        “Authorized redirect URIs” field at all, so sign-in fails with
+        <code>redirect_uri_mismatch</code>. If your client page shows an <b>Item ID</b>
+        instead of redirect URIs, switch Sign-in method back to <b>Chrome identity</b>
+        and set that Item ID to this extension's ID above.
+      </div>
       <div class="grid2">
         <div class="field">
-          <label for="oauthClientId">OAuth client ID</label>
+          <label for="oauthClientId">OAuth client ID <span class="muted">(Web application type)</span></label>
           <input type="text" id="oauthClientId" placeholder="1234-abc.apps.googleusercontent.com">
         </div>
         <div class="field">
@@ -48,7 +75,16 @@
           <input type="password" id="oauthClientSecret" placeholder="GOCSPX-…">
         </div>
       </div>
-      <p class="help">Add <code id="redirect-uri"></code> as an authorized redirect URI on that client.</p>
+      <p class="help">On that Web-application client, add
+        <code id="redirect-uri"></code> under <b>Authorized redirect URIs</b> — trailing slash included.</p>
+    </div>
+
+    <div id="chrome-fields" class="status">
+      <strong>This mode reads the client ID from <code>manifest.json</code>, not from this page.</strong>
+      It needs a <em>Chrome Extension</em> OAuth client whose <b>Item ID</b> equals this
+      extension's ID above. The client ID currently in your manifest is shown in
+      “Client ID in manifest”; if it says <em>not set</em>, edit
+      <code>manifest.json</code> → <code>oauth2.client_id</code> and reload the extension.
     </div>
 
     <div class="actions">
@@ -155,6 +191,21 @@
       </div>
     </div>
     <p class="help">Expected response: JSON with any of <code>stage</code>, <code>valuation</code>, <code>totalRaised</code>, <code>lastRound</code>, <code>lastRoundDate</code>, <code>headcount</code>, <code>industry</code>.</p>
+  </section>
+
+  <section>
+    <h2>Detection log</h2>
+    <p class="desc">
+      What the detector saw on the last 50 pages — both applications it logged and
+      <b>near misses</b>, where it gathered some evidence but not enough to be sure.
+      If an application was not picked up, this says why.
+    </p>
+    <div id="detect-log"></div>
+    <div class="actions">
+      <button id="btn-refresh-log">Refresh</button>
+      <button id="btn-clear-log">Clear</button>
+      <button id="btn-copy-log">Copy for a bug report</button>
+    </div>
   </section>
 
   <section>
