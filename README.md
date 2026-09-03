@@ -61,7 +61,7 @@ outreach are filtered out before they can distort anything. Applications with no
 ## Install
 
 ```bash
-git clone https://github.com/sofiatofigh0/jobplug.git
+git clone -b claude/job-app-tracker-extension-dajhwt https://github.com/sofiatofigh0/jobplug.git
 cd jobplug
 npm run check        # verifies the extension loads cleanly
 ```
@@ -72,6 +72,14 @@ npm run check        # verifies the extension loads cleanly
    client (~10 minutes, once), then click **Connect Google**
 
 A spreadsheet named *Job Applications — JobPlug* is created in your Drive automatically.
+
+There's no build step — `extension/` loads as-is, and Node is only needed for the scripts
+below.
+
+> **Working in Codespaces or a remote devcontainer?** Chrome can't load an extension from a
+> remote container — *Load unpacked* only sees your local disk. Run `npm run pin-id` once
+> (fixes the extension ID so it survives moving), then `npm run package`, and download the
+> single `jobplug-extension.zip` it writes. Details in [SETUP.md](SETUP.md#0-get-the-files-onto-the-machine-running-chrome).
 
 ---
 
@@ -126,8 +134,10 @@ editable, so you can also just type them in.
 ## Development
 
 ```bash
-npm test         # 45 tests — parsing, classification, dedupe, aggregates
-npm run check    # manifest ↔ filesystem consistency, syntax check on every script
+npm test          # 53 tests — parsing, classification, dedupe, aggregates, Sheets requests
+npm run check     # manifest ↔ filesystem consistency, syntax check on every script
+npm run pin-id    # pin the extension ID so it survives moving the folder
+npm run package   # check, then bundle extension/ into jobplug-extension.zip
 ```
 
 ```

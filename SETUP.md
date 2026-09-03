@@ -6,12 +6,63 @@ are free at the volumes this extension uses.
 
 ---
 
+## 0. Get the files onto the machine running Chrome
+
+**A Chrome extension cannot be loaded from a remote container.** *Load unpacked* opens a
+file picker on the computer running Chrome, and it cannot see a Codespace, a devcontainer,
+or an SSH host. Wherever you edit the code, the folder has to exist locally to load it.
+
+Pick whichever applies:
+
+**No tooling at all** — you don't need git, Node, or a terminal to *use* this:
+
+> Download <https://github.com/sofiatofigh0/jobplug/archive/refs/heads/claude/job-app-tracker-extension-dajhwt.zip>,
+> unzip it, and use the `extension/` folder inside. Skip to step 1.
+
+**Local clone** — best if you'll be changing code:
+
+```bash
+git clone -b claude/job-app-tracker-extension-dajhwt https://github.com/sofiatofigh0/jobplug.git
+```
+
+**GitHub Codespaces / remote devcontainer** — edit remotely, run locally:
+
+```bash
+npm run pin-id      # once: fixes the extension ID so it survives re-downloading
+npm run package     # writes jobplug-extension.zip
+```
+
+Right-click `jobplug-extension.zip` in the file explorer → **Download**, unzip it locally,
+and load that folder. One file beats downloading a 25-file tree, and `npm run package`
+runs the consistency check first so you never download a broken build.
+
+There is **no build step** — the `extension/` folder loads exactly as it is. Node is only
+needed for `npm test`, `npm run check`, `npm run pin-id` and `npm run package`.
+
+### Pin the extension ID first if the folder will ever move
+
+Chrome derives an unpacked extension's ID from its folder path. Both OAuth options below
+bake that ID in — the Chrome-app client is bound to it, and the PKCE redirect URI contains
+it — so moving the folder, or unzipping a fresh download somewhere else, silently breaks
+sign-in.
+
+```bash
+npm run pin-id
+```
+
+This writes a public key into `manifest.json`, which makes the ID a function of that key
+instead of the path. It then stays the same wherever you unzip it, on every machine. Commit
+the changed `manifest.json` and the ID follows you around. Run it **before** step 2 — the
+script prints the ID you'll need there.
+
+---
+
 ## 1. Load the extension
 
 1. `chrome://extensions` → turn on **Developer mode** (top right)
-2. **Load unpacked** → select the `extension/` folder from this repo
+2. **Load unpacked** → select the `extension/` folder
 3. Note the **extension ID** Chrome shows on the card — a 32-letter string.
-   You'll need it in step 4. It's also displayed on JobPlug's settings page.
+   You'll need it in step 5. It's also displayed on JobPlug's settings page.
 
 ---
 
@@ -84,11 +135,9 @@ Pick **one** of these. Option A is smoother; option B works everywhere.
 6. Back on `chrome://extensions`, click **Reload** on the JobPlug card
 7. In JobPlug's settings, leave **Sign-in method** on *Chrome identity*
 
-**Keeping the extension ID stable.** An unpacked extension's ID is derived from its folder
-path, so it changes if you move the folder — and then the OAuth client stops matching. To
-pin it, pack the extension once (`chrome://extensions` → **Pack extension**), then add the
-public key from the generated `.pem` to `manifest.json` as a top-level `"key"` field. Or
-just don't move the folder.
+**Keeping the extension ID stable.** If you skipped `npm run pin-id` in step 0, the ID is
+derived from the folder path and changes if you move the folder — at which point this OAuth
+client stops matching. Run `npm run pin-id` and reload the extension to fix it permanently.
 
 ### Option B — Browser redirect / PKCE (Brave, Edge, or if you'd rather not pin the ID)
 
