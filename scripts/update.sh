@@ -37,27 +37,33 @@ main() {
     exit 1
   fi
 
-  local backup
-  backup="$(mktemp -t jobplug-manifest)"
-  cp "$manifest" "$backup"
-  echo "Saved your manifest.json"
+  # Carry forward only the two fields that are yours. Restoring the whole file
+  # would also restore its content_scripts list, silently reverting any fix
+  # shipped in the manifest itself - which is exactly what happened once.
+  local client key
+  client="$(sed -n 's/.*"client_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -1)"
+  key="$(sed -n 's/.*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -1)"
+  echo "Keeping your OAuth client ID${key:+ and pinned extension key}"
 
   local tmp
   tmp="$(mktemp -d -t jobplug)"
-  echo "Downloading $branch …"
+  echo "Downloading $branch ..."
   curl -fsSL -o "$tmp/jobplug.zip" \
     "https://github.com/$repo/archive/refs/heads/$branch.zip"
 
   echo "Unpacking over $root"
   ( cd "$parent" && unzip -oq "$tmp/jobplug.zip" )
 
-  cp "$backup" "$manifest"
-  rm -rf "$tmp" "$backup"
+  awk -v k="$key" -v c="$client" '
+    { if (c != "" && $0 ~ /"client_id"/) sub(/"client_id"[ \t]*:[ \t]*"[^"]*"/, "\"client_id\": \"" c "\"") }
+    { print }
+    /"version"[ \t]*:/ { if (k != "" && !done) { print "  \"key\": \"" k "\","; done=1 } }
+  ' "$manifest" > "$manifest.tmp" && mv "$manifest.tmp" "$manifest"
+  rm -rf "$tmp"
 
-  local client
-  client="$(grep -o '"client_id"[^,]*' "$manifest" | head -1)"
   echo
-  echo "Done. Your OAuth client is intact: $client"
+  echo "Done. Client ID: $(sed -n 's/.*"client_id": "\([^"]*\)".*/\1/p' "$manifest")"
+  echo "Injected scripts: $(sed -n 's/.*"src\/content\/detector.js".*/ok/p' "$manifest" | head -1)"
   echo
   echo "Next:"
   echo "  1. chrome://extensions  ->  reload JobPlug (the circular arrow)"
