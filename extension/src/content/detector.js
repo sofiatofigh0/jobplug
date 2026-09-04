@@ -32,6 +32,7 @@
   let lastFiredKey = '';
   let lastFiredAt = 0;
   let successObserver = null;
+  let successArmed = false;
 
   function newState() {
     const st = {
@@ -68,6 +69,7 @@
     for (const [k, v] of Object.entries(carry)) if (v) state[k] = v;
     if (state.resume) { state.score += WEIGHTS.file; state.reasons.push('file.carried'); }
     if (successObserver) { successObserver.disconnect(); successObserver = null; }
+    successArmed = false;
     persist();
   }
 
@@ -112,7 +114,7 @@
     if (state.fired) return;
     state.score += weight;
     state.reasons.push(detail ? `${kind}(${detail})` : kind);
-    if (state.score >= WEIGHTS.file && !successObserver) armSuccessObserver();
+    if (state.score >= WEIGHTS.file && !successArmed) armSuccessObserver();
     maybeFire();
     scheduleNearMiss();
   }
@@ -247,14 +249,27 @@
     addEvidence('successUrl', WEIGHTS.successUrl, path.split('/').filter(Boolean).pop());
   }
 
+  /**
+   * Watch for confirmation copy appearing on the page.
+   *
+   * `successArmed` is a separate flag from `successObserver`, and is set before
+   * anything can call back in. Guarding on the observer instead caused infinite
+   * recursion: the first scan ran before the observer was assigned, found the
+   * confirmation text, called addEvidence, which saw a still-null observer and
+   * re-armed — check -> addEvidence -> arm -> check. That overflowed the stack
+   * and killed the whole content script, so on exactly the pages that mattered
+   * most, nothing was detected at all.
+   */
   function armSuccessObserver() {
-    if (successObserver) return;
+    if (successArmed) return;
     if (!document.body) {
       // Evidence can arrive before <body> exists at document_start.
       document.addEventListener('DOMContentLoaded', armSuccessObserver, { once: true });
       return;
     }
+    successArmed = true;
     state.armedAt = Date.now();
+
     const check = () => {
       if (state.fired) return;
       const text = (document.body.innerText || '').slice(0, 20000);
@@ -262,12 +277,17 @@
         if (re.test(text)) { addEvidence('successText', WEIGHTS.success, re.source.slice(0, 24)); return; }
       }
     };
-    check();
+
     successObserver = new MutationObserver(debounce(check, 400));
     try {
       successObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
     } catch (_) {}
-    setTimeout(() => { if (successObserver) { successObserver.disconnect(); successObserver = null; } }, 120_000);
+    // Only scan once the re-entry guard is fully in place.
+    check();
+
+    setTimeout(() => {
+      if (successObserver) { successObserver.disconnect(); successObserver = null; }
+    }, 120_000);
   }
 
   function debounce(fn, ms) {
