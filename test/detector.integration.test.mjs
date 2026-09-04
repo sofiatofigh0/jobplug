@@ -165,3 +165,84 @@ test('the detector answers a liveness probe', async () => {
     assert.equal(reply.threshold, 60);
   } finally { page.restore(); }
 });
+
+// --- false positives --------------------------------------------------------
+
+/** A job board POSTing on page load — analytics, view tracking, data fetch. */
+function backgroundPost(page, url) {
+  page.win.postMessage({
+    __JAT_NET__: true, kind: 'net', via: 'fetch', method: 'POST',
+    ok: true, status: 200, url, files: [],
+  });
+}
+
+test('viewing a posting is not logged, however much the page POSTs', async () => {
+  const page = await loadPage({
+    url: 'https://job-boards.greenhouse.io/reddit/jobs/8088720',
+    title: 'Staff Engineer at Reddit',
+    body: [new El('h1', { class: 'app-title' }, 'Staff Engineer')],
+  });
+  try {
+    backgroundPost(page, 'https://job-boards.greenhouse.io/reddit/jobs/8088720');
+    backgroundPost(page, 'https://job-boards.greenhouse.io/api/graphql');
+    backgroundPost(page, 'https://job-boards.greenhouse.io/embed/job_app?for=reddit');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(page.messages.find((m) => m.type === 'CAPTURE'), undefined,
+      'background traffic must never be enough on its own');
+  } finally { page.restore(); }
+});
+
+test('clicking Apply to open the form is not a submission', async () => {
+  const page = await loadPage({
+    url: 'https://job-boards.greenhouse.io/reddit/jobs/8088720',
+    title: 'Staff Engineer at Reddit',
+    body: [new El('h1', { class: 'app-title' }, 'Staff Engineer')],
+  });
+  try {
+    for (const label of ['Apply', 'Apply now', 'Easy Apply']) {
+      page.fire('document', 'click', { target: new El('button', {}, label) });
+    }
+    backgroundPost(page, 'https://job-boards.greenhouse.io/embed/job_app?for=reddit');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(page.messages.find((m) => m.type === 'CAPTURE'), undefined,
+      'opening the form is not submitting it');
+  } finally { page.restore(); }
+});
+
+test('a real submission is still captured', async () => {
+  const page = await loadPage({
+    url: 'https://job-boards.greenhouse.io/reddit/jobs/8088720',
+    title: 'Staff Engineer at Reddit',
+    body: [new El('h1', { class: 'app-title' }, 'Staff Engineer')],
+  });
+  try {
+    page.win.postMessage({
+      __JAT_NET__: true, kind: 'file', url: page.win.location.href,
+      files: [{ field: 'resume', name: 'sofia_backend_v3.pdf', size: 120000, type: 'application/pdf' }],
+    });
+    page.fire('document', 'click', { target: new El('button', {}, 'Submit application') });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const cap = page.messages.find((m) => m.type === 'CAPTURE');
+    assert.ok(cap, 'resume attached plus a submit press must still capture');
+    assert.equal(cap.payload.record.resumeName, 'sofia_backend_v3.pdf');
+  } finally { page.restore(); }
+});
+
+test('a resume attached but never submitted is not logged', async () => {
+  const page = await loadPage({
+    url: 'https://job-boards.greenhouse.io/reddit/jobs/8088720',
+    title: 'Staff Engineer at Reddit',
+    body: [new El('h1', { class: 'app-title' }, 'Staff Engineer')],
+  });
+  try {
+    page.win.postMessage({
+      __JAT_NET__: true, kind: 'file', url: page.win.location.href,
+      files: [{ field: 'resume', name: 'resume.pdf', size: 1000, type: 'application/pdf' }],
+    });
+    backgroundPost(page, 'https://job-boards.greenhouse.io/reddit/jobs/8088720');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(page.messages.find((m) => m.type === 'CAPTURE'), undefined,
+      'changing your mind after attaching a resume must not log an application');
+  } finally { page.restore(); }
+});

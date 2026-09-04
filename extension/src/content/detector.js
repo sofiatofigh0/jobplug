@@ -16,7 +16,11 @@
   const { U, C, P, A } = root.JAT;
   const TAG = '__JAT_NET__';
 
-  const WEIGHTS = { boardApply: 60, genericApplyWithFile: 60, genericApply: 25, atsPost: 45, file: 25, click: 20, success: 50, successUrl: 55, atsHost: 10 };
+  // Calibrated so that network traffic alone can never reach THRESHOLD. Job
+  // boards POST constantly on page load — analytics, view tracking, fetching
+  // the posting itself — and treating any of that as a submission logged jobs
+  // that were only ever looked at.
+  const WEIGHTS = { boardApply: 35, genericApplyWithFile: 35, genericApply: 15, atsPost: 25, file: 30, click: 25, success: 40, successUrl: 55, atsHost: 10 };
   const THRESHOLD = 60;
   const REARM_MS = 90_000;
 
@@ -45,6 +49,14 @@
       armedAt: 0,
       fired: false,
       postOnAts: false,
+      // Set only by a deliberate act (attaching a resume, pressing submit) or a
+      // confirmed outcome. Background requests never set it, so merely viewing
+      // a posting cannot be logged however much traffic the page generates.
+      intent: false,
+      // A submit button was actually pressed. The endpoint-agnostic fallback
+      // below keys off this rather than off the resume, because a job board
+      // POSTs on page load and a resume can sit attached indefinitely.
+      submitPressed: false,
       job: null,          // { company, position, jdUrl } carried across pages
     };
     // Re-applied on every reset. Previously this was added once at load, so any
@@ -67,7 +79,7 @@
     const carry = hard ? {} : { resume: state.resume, coverLetter: state.coverLetter };
     Object.assign(state, newState());
     for (const [k, v] of Object.entries(carry)) if (v) state[k] = v;
-    if (state.resume) { state.score += WEIGHTS.file; state.reasons.push('file.carried'); }
+    if (state.resume) { state.score += WEIGHTS.file; state.reasons.push('file.carried'); state.intent = true; }
     if (successObserver) { successObserver.disconnect(); successObserver = null; }
     successArmed = false;
     persist();
@@ -103,6 +115,7 @@
         st.resume = saved.resume;
         st.score += WEIGHTS.file;
         st.reasons.push('file.restored');
+        st.intent = true;
       }
       if (saved.coverLetter) st.coverLetter = saved.coverLetter;
       if (saved.job) st.job = saved.job;
@@ -110,8 +123,12 @@
     } catch { return null; }
   }
 
+  const INTENT_KINDS = /^(file\.resume|file\.carried|file\.restored|click|formSubmit|successUrl|successText)/;
+
   function addEvidence(kind, weight, detail) {
     if (state.fired) return;
+    if (INTENT_KINDS.test(kind)) state.intent = true;
+    if (/^(click|formSubmit)/.test(kind)) state.submitPressed = true;
     state.score += weight;
     state.reasons.push(detail ? `${kind}(${detail})` : kind);
     if (state.score >= WEIGHTS.file && !successArmed) armSuccessObserver();
@@ -156,11 +173,11 @@
     }
 
     // Endpoint-shape fallback. Every ATS reworks its submit URL sooner or later,
-    // and a regex that has rotted fails silently — the application just never
-    // gets logged. So: once a resume has been attached, a successful write
-    // request on an ATS host is treated as evidence in its own right, whatever
-    // the URL happens to look like. Counted once per flow.
-    if (onAtsHost && hasResume && !state.postOnAts) {
+    // and a regex that has rotted fails silently. So a successful write request
+    // on an ATS host counts as evidence whatever its URL — but only once a
+    // resume is attached AND submit has been pressed, since otherwise ordinary
+    // page-load traffic would qualify. Counted once per flow.
+    if (onAtsHost && hasResume && state.submitPressed && !state.postOnAts) {
       state.postOnAts = true;
       state.netUrl = d.url;
       addEvidence('net.atsPost', WEIGHTS.atsPost, U.hostOf(d.url));
@@ -205,11 +222,9 @@
       if (!el) return;
       const label = U.clean(el.innerText || el.value || el.getAttribute('aria-label') || '');
       if (!label || label.length > 40) return;
-      if (!C.APPLY_BUTTON_RE.test(label)) return;
-      // "Apply" on a listing page just opens the form — only count it as intent
-      // when a resume is already attached or we're inside an ATS flow.
-      const strong = !!state.resume || onAtsHost || /submit|send|finish|complete/i.test(label);
-      if (!strong) return;
+      // "Apply" opens the form; it does not submit it. Counting that as intent
+      // was half of why simply browsing postings logged them.
+      if (!C.SUBMIT_BUTTON_RE.test(label)) return;
       addEvidence('click', WEIGHTS.click, label.slice(0, 30));
     } catch (_) {}
   }, true);
@@ -300,6 +315,7 @@
   // ---------------------------------------------------------------------------
   function maybeFire() {
     if (state.fired || state.score < THRESHOLD) return;
+    if (!state.intent) return;   // never log a posting that was only viewed
     const meta = collect();
     if (!meta.company && !meta.position) return; // nothing worth writing down
 

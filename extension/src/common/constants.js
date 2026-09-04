@@ -123,7 +123,9 @@
     {
       id: 'greenhouse', label: 'Greenhouse',
       hosts: ['boards.greenhouse.io', 'job-boards.greenhouse.io', 'my.greenhouse.io', 'greenhouse.io'],
-      applyRe: [/greenhouse\.io\/.*(applications?|job_app|job_application|application_form)/i, /api\.greenhouse\.io\/.*(applications?|boards)/i, /greenhouse\.io\/.*\/jobs\/\d+/i],
+      // NB: no bare /jobs/<id> pattern — that is the posting's own URL, and any
+      // analytics POST the page makes on load would read as a submission.
+      applyRe: [/greenhouse\.io\/.*(applications?|job_app|job_application|application_form)/i, /api\.greenhouse\.io\/.*(applications?|boards)/i],
       mailDomains: ['greenhouse.io', 'us.greenhouse-mail.io', 'greenhouse-mail.io'],
     },
     {
@@ -304,7 +306,12 @@
   C.SUCCESS_URL_RE = /\/(confirmation|confirmed|thank[-_]?you|thanks|success|applied|post[-_]?apply|application[-_]?(complete|completed|received|submitted|confirmation))(\/|\?|#|$)/i;
 
   // Button labels that mean "this click submits an application".
-  C.APPLY_BUTTON_RE = /^\s*(submit( my)?( the)?( job)?( application)?|send( my)?( the)?( application)?|apply( now| for this job| to this job)?|easy apply|submit and continue|finish( and submit)?|complete application)\s*$/i;
+  // Clicking "Apply" opens the form; it is not evidence that anything was
+  // submitted. Only the second list means "this click sends the application".
+  C.OPEN_FORM_BUTTON_RE = /^\s*(apply( now| for this job| to this job| here)?|easy apply|start application|continue)\s*$/i;
+  C.SUBMIT_BUTTON_RE = /^\s*(submit( my)?( the)?( job)?( application)?|send( my)?( the)?( application)?|submit and continue|finish( and submit)?|complete application|submit application)\s*$/i;
+  // Kept for callers that just want "is this an apply-ish button at all".
+  C.APPLY_BUTTON_RE = new RegExp(`(${C.OPEN_FORM_BUTTON_RE.source})|(${C.SUBMIT_BUTTON_RE.source})`, 'i');
 
   C.RESUME_FILE_RE = /\.(pdf|docx?|rtf|txt|pages|odt)$/i;
   C.RESUME_HINT_RE = /(resume|résumé|cv|curriculum)/i;

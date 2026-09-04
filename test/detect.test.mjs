@@ -17,7 +17,6 @@ test('real ATS submit endpoints are recognised', () => {
     ['ashby', 'https://jobs.ashbyhq.com/api/non-user-graphql?op=ApplyToJob'],
     ['ashby', 'https://jobs.ashbyhq.com/api/application/submit'],
     ['greenhouse', 'https://job-boards.greenhouse.io/embed/job_app?for=acme&token=123'],
-    ['greenhouse', 'https://boards.greenhouse.io/acme/jobs/4567'],
     ['greenhouse', 'https://api.greenhouse.io/v1/applications'],
     ['lever', 'https://api.lever.co/v0/postings/acme/uuid/apply'],
     ['workday', 'https://acme.wd1.myworkdayjobs.com/careers/job/123/submitApplication'],
@@ -34,6 +33,10 @@ test('ordinary page loads on an ATS host are not treated as submissions', () => 
     'https://boards.greenhouse.io/acme',
     'https://jobs.lever.co/acme',
     'https://jobs.ashbyhq.com/acme',
+    // A posting's own URL. Matching it meant any analytics POST the page made
+    // on load scored as a submitted application.
+    'https://boards.greenhouse.io/acme/jobs/4567',
+    'https://job-boards.greenhouse.io/reddit/jobs/8088720',
   ]) {
     const id = matchesApply(url);
     assert.ok(String(id).endsWith(':no-match'), `${url} should not look like a submit`);

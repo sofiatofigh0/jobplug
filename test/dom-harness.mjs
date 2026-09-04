@@ -42,7 +42,7 @@ class El {
     this.children.forEach(walk);
     return all.filter((n) => matches(n, sel));
   }
-  closest() { return null; }
+  closest(sel) { return matches(this, sel) ? this : null; }
   cloneNode() { const c = new El(this.tagName, { ...this.attrs }, this.textContent); c.children = this.children; return c; }
   remove() {}
   append(...kids) { this.children.push(...kids); return this; }
