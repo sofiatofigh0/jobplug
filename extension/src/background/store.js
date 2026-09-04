@@ -60,17 +60,40 @@ async function putApps(apps) {
 }
 
 /**
+ * Stable job reference from a posting URL.
+ *
+ * Confirmation suffixes are stripped so /jobs/8088720 and
+ * /jobs/8088720/confirmation resolve to the same job and merge into one row
+ * rather than creating two.
+ */
+function jobRef(url) {
+  if (!url) return '';
+  try {
+    const segs = new URL(url).pathname.split('/').filter(Boolean)
+      .filter((s) => !/^(confirmation|confirmed|thanks|thank[-_]?you|success|applied|post[-_]?apply|application)$/i.test(s));
+    const ids = segs.filter((s) => /^\d{4,}$/.test(s) || /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(s));
+    return ids.length ? ids[ids.length - 1] : segs.join('/');
+  } catch { return ''; }
+}
+
+/**
  * Dedupe identity for an application. Company + role + board is stable across
  * the JD page, the apply iframe and any later Gmail update, which URL is not.
+ *
+ * When the role is missing the company alone is NOT identity — a confirmation
+ * page often names the employer but not the job, and keying on company would
+ * collapse every role at that employer into one row, silently overwriting each
+ * application with the next. So the job id from the URL joins the key.
  */
 export function makeId(rec) {
   const company = U.normCompany(rec.company || '');
   const title = U.normTitle(rec.position || '');
   const board = rec.boardId || rec.board || '';
-  const basis = company || title
-    ? `${company}|${title}|${board}`
-    : `url|${(rec.jdUrl || '').split('?')[0]}`;
-  return 'a_' + U.hash(basis);
+  if (company && title) return 'a_' + U.hash(`${company}|${title}|${board}`);
+
+  const ref = jobRef(rec.jdUrl || rec.frameUrl || '');
+  if (company || title) return 'a_' + U.hash(`${company}|${title}|${board}|${ref}`);
+  return 'a_' + U.hash(`url|${ref || (rec.jdUrl || '').split('?')[0]}`);
 }
 
 export async function getApp(id) {

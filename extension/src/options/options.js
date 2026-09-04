@@ -152,6 +152,8 @@
     'net.atsPost': 'write request succeeded on a job board',
     successText: 'confirmation message appeared',
     'successText.onload': 'confirmation page loaded',
+    successUrl: 'landed on a confirmation URL',
+    'net.atsPost': 'write request succeeded on a job board',
   };
   const explainReason = (r) => {
     const [tag, detail] = [r.replace(/\(.*/, ''), (r.match(/\((.*)\)/) || [])[1]];
@@ -161,19 +163,57 @@
 
   let logCache = [];
 
+  /**
+   * Check which open tabs the content script is actually running in.
+   * Scans every tab rather than the active one — this page is the active tab
+   * whenever the button is pressed.
+   */
+  async function pingTabs() {
+    const box = $('#ping-result');
+    box.classList.remove('hidden');
+    box.className = 'status';
+    box.textContent = 'Checking your open tabs…';
+    try {
+      const r = await send('PING_TABS');
+      if (!r.tabs.length) {
+        box.className = 'status warn';
+        box.textContent = r.note;
+        return;
+      }
+      box.className = r.alive ? 'status ok' : 'status bad';
+      const rows = r.tabs.map((t) => {
+        const state = t.alive
+          ? `running${t.board ? ` · ${esc(t.board)}` : ''}${t.score != null ? ` · ${t.score}/${t.threshold}` : ''}`
+          : 'NOT running — reload this tab';
+        return `<div class="ping-row">
+          <span class="pill ${t.alive ? 'good' : 'warn'}">${t.alive ? 'ok' : 'off'}</span>
+          <span class="ping-host">${esc(t.host)}</span>
+          <span class="muted">${state}</span>
+        </div>`;
+      }).join('');
+      box.innerHTML = `<strong>Detector running in ${r.alive} of ${r.total} open tabs.</strong>` +
+        (r.note ? `<div>${esc(r.note)}</div>` : '') + rows;
+    } catch (err) {
+      box.className = 'status bad';
+      box.innerHTML = `<strong>Could not check.</strong>${esc(err.message)}`;
+    }
+  }
+
   async function renderLog() {
     const { log } = await send('GET_DETECT_LOG');
     logCache = log;
     const box = $('#detect-log');
     if (!log.length) {
-      box.innerHTML = '<p class="help">Nothing recorded yet. Apply to a job, then come back.</p>';
+      box.innerHTML = '<p class="help">Nothing recorded yet. Open a job page and press <b>Test detection on current tab</b> to check the detector is running there.</p>';
       return;
     }
     box.innerHTML = log.map((e) => {
       const ok = e.outcome === 'captured';
-      return `<div class="log-entry ${ok ? 'ok' : 'miss'}">
+      const visited = e.outcome === 'visited';
+      const label = ok ? 'Logged' : visited ? 'Seen' : 'Not logged';
+      return `<div class="log-entry ${ok ? 'ok' : visited ? 'seen' : 'miss'}">
         <div class="log-head">
-          <span class="pill ${ok ? 'good' : 'warn'}">${ok ? 'Logged' : 'Not logged'}</span>
+          <span class="pill ${ok ? 'good' : visited ? '' : 'warn'}">${label}</span>
           <b>${esc(e.company || e.host || '—')}</b>
           <span class="muted">${esc(e.position || '')}</span>
           <span class="muted right">${new Date(e.at).toLocaleString()}</span>
@@ -210,6 +250,7 @@
     }));
     $('#btn-add-alias').addEventListener('click', () => renderAliases([...collectAliases(), { match: '', label: '' }]));
     $('#btn-save').addEventListener('click', () => save().catch((e) => toast(e.message)));
+    $('#btn-ping').addEventListener('click', () => pingTabs());
     $('#btn-refresh-log').addEventListener('click', () => renderLog().catch((e) => toast(e.message)));
     $('#btn-clear-log').addEventListener('click', async () => {
       await send('CLEAR_DETECT_LOG'); await renderLog(); toast('Detection log cleared.');

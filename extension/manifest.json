@@ -74,6 +74,8 @@
         "https://*.zoom.us/*"
       ],
       "js": [
+        "src/common/constants.js",
+        "src/common/util.js",
         "src/common/parse.js",
         "src/content/adapters.js",
         "src/content/detector.js"

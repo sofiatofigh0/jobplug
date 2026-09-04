@@ -145,3 +145,30 @@ test('the seen-job cache expires and isolates tabs', async () => {
   assert.equal(await S.recallSeen(1, -1), null, 'must respect the age limit');
   assert.equal(await S.recallSeen(null), null);
 });
+
+test('two roles at one company stay separate when the title is unknown', () => {
+  // A confirmation page frequently names the employer but not the job. Keying
+  // on company alone collapsed every application to that employer into a single
+  // row, each one silently overwriting the last.
+  const at = (id) => S.makeId({
+    company: 'Reddit', position: '', boardId: 'greenhouse',
+    jdUrl: `https://job-boards.greenhouse.io/reddit/jobs/${id}/confirmation`,
+  });
+  assert.notEqual(at('8088720'), at('9999999'));
+});
+
+test('a posting and its confirmation page resolve to the same row', () => {
+  const posting = S.makeId({ company: 'Reddit', position: '', boardId: 'greenhouse',
+    jdUrl: 'https://job-boards.greenhouse.io/reddit/jobs/8088720' });
+  const confirmation = S.makeId({ company: 'Reddit', position: '', boardId: 'greenhouse',
+    jdUrl: 'https://job-boards.greenhouse.io/reddit/jobs/8088720/confirmation' });
+  assert.equal(posting, confirmation, 'applying must not create a second row');
+});
+
+test('a known title still wins over the URL, so the same role merges', () => {
+  const a = S.makeId({ company: 'Reddit', position: 'Staff Engineer', boardId: 'greenhouse',
+    jdUrl: 'https://job-boards.greenhouse.io/reddit/jobs/8088720' });
+  const b = S.makeId({ company: 'Reddit', position: 'Staff Engineer (Remote)', boardId: 'greenhouse',
+    jdUrl: 'https://job-boards.greenhouse.io/reddit/jobs/8088720/confirmation' });
+  assert.equal(a, b);
+});

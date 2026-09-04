@@ -144,3 +144,27 @@ test('detector declares its storage constants before restore() runs', async () =
   assert.ok(declared < used,
     'STORE_KEY must be declared before restore() is called, or restore() silently always returns null');
 });
+
+// --- manifest integrity -----------------------------------------------------
+
+test('the manifest injects every dependency the content scripts need', async () => {
+  const fs = await import('node:fs');
+  const manifest = JSON.parse(
+    fs.readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8')
+  );
+  const isolated = manifest.content_scripts.find((cs) => cs.world === 'ISOLATED');
+  assert.ok(isolated, 'an isolated-world entry must exist');
+
+  // parse/adapters/detector all read globalThis.JAT.C and .U at load time, so
+  // the files defining them have to be injected first. Omitting them made
+  // adapters.js throw in the browser while every unit test still passed.
+  const required = [
+    'src/common/constants.js',
+    'src/common/util.js',
+    'src/common/parse.js',
+    'src/content/adapters.js',
+    'src/content/detector.js',
+  ];
+  assert.deepEqual(isolated.js, required,
+    'content scripts must be injected in dependency order');
+});
