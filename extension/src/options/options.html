@@ -196,12 +196,15 @@
   <section>
     <h2>Detection log</h2>
     <p class="desc">
-      What the detector saw on the last 50 pages — both applications it logged and
-      <b>near misses</b>, where it gathered some evidence but not enough to be sure.
-      If an application was not picked up, this says why.
+      What the detector saw on the last 50 pages. To check it is running at all,
+      open a job page in another tab and press <b>Test detection on current tab</b> —
+      that reports whether the content script is alive there, without needing you
+      to apply to anything.
     </p>
+    <div id="ping-result" class="status hidden"></div>
     <div id="detect-log"></div>
     <div class="actions">
+      <button class="primary" id="btn-ping">Test detection on current tab</button>
       <button id="btn-refresh-log">Refresh</button>
       <button id="btn-clear-log">Clear</button>
       <button id="btn-copy-log">Copy for a bug report</button>

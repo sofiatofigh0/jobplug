@@ -152,6 +152,8 @@
     'net.atsPost': 'write request succeeded on a job board',
     successText: 'confirmation message appeared',
     'successText.onload': 'confirmation page loaded',
+    successUrl: 'landed on a confirmation URL',
+    'net.atsPost': 'write request succeeded on a job board',
   };
   const explainReason = (r) => {
     const [tag, detail] = [r.replace(/\(.*/, ''), (r.match(/\((.*)\)/) || [])[1]];
@@ -161,19 +163,47 @@
 
   let logCache = [];
 
+  /** One-click check that the content script is actually running somewhere. */
+  async function pingTab() {
+    const box = $('#ping-result');
+    box.classList.remove('hidden');
+    box.className = 'status';
+    box.textContent = 'Checking the active tab…';
+    try {
+      const r = await send('PING_TAB');
+      if (!r.alive) {
+        box.className = 'status bad';
+        box.innerHTML = `<strong>Detector not running on that tab.</strong>${esc(r.reason)}` +
+          `<div class="help">${esc(r.url || '')}</div>`;
+        return;
+      }
+      box.className = 'status ok';
+      box.innerHTML = `<strong>Detector is running.</strong>` +
+        `<div>${r.board ? `Recognised as <b>${esc(r.board)}</b>` : `<b>${esc(r.host)}</b> is not a known job board — detection still works, but needs a resume upload plus a submit.`}</div>` +
+        `<div>Evidence so far: <b>${r.score}</b> of ${r.threshold} needed` +
+        `${r.reasons.length ? ` — ${esc(r.reasons.map(explainReason).join('; '))}` : ' — nothing yet'}.</div>` +
+        (r.resume ? `<div>Resume seen: <b>${esc(r.resume)}</b></div>` : '');
+    } catch (err) {
+      box.className = 'status bad';
+      box.innerHTML = `<strong>Could not reach that tab.</strong>${esc(err.message)}`;
+    }
+  }
+
   async function renderLog() {
     const { log } = await send('GET_DETECT_LOG');
     logCache = log;
     const box = $('#detect-log');
     if (!log.length) {
-      box.innerHTML = '<p class="help">Nothing recorded yet. Apply to a job, then come back.</p>';
+      box.innerHTML = '<p class="help">Nothing recorded yet. Open a job page and press <b>Test detection on current tab</b> to check the detector is running there.</p>';
       return;
     }
     box.innerHTML = log.map((e) => {
       const ok = e.outcome === 'captured';
-      return `<div class="log-entry ${ok ? 'ok' : 'miss'}">
+      const visited = e.outcome === 'visited';
+      const label = ok ? 'Logged' : visited ? 'Seen' : 'Not logged';
+      return `<div class="log-entry ${ok ? 'ok' : visited ? 'seen' : 'miss'}">
         <div class="log-head">
-          <span class="pill ${ok ? 'good' : 'warn'}">${ok ? 'Logged' : 'Not logged'}</span>
+          <span class="pill ${ok ? 'good' : visited ? '' : 'warn'}">${label}</span>
           <b>${esc(e.company || e.host || '—')}</b>
           <span class="muted">${esc(e.position || '')}</span>
           <span class="muted right">${new Date(e.at).toLocaleString()}</span>
@@ -210,6 +240,7 @@
     }));
     $('#btn-add-alias').addEventListener('click', () => renderAliases([...collectAliases(), { match: '', label: '' }]));
     $('#btn-save').addEventListener('click', () => save().catch((e) => toast(e.message)));
+    $('#btn-ping').addEventListener('click', () => pingTab());
     $('#btn-refresh-log').addEventListener('click', () => renderLog().catch((e) => toast(e.message)));
     $('#btn-clear-log').addEventListener('click', async () => {
       await send('CLEAR_DETECT_LOG'); await renderLog(); toast('Detection log cleared.');

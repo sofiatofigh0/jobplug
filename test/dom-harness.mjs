@@ -72,6 +72,7 @@ function matches(node, sel) {
 export async function loadPage({ url, title = '', body = [], readyState = 'complete', settle = 80 }) {
   const messages = [];
   const errors = [];
+  const msgListeners = [];
   const listeners = { document: {}, window: {} };
   const store = new Map();
 
@@ -130,7 +131,7 @@ export async function loadPage({ url, title = '', body = [], readyState = 'compl
       id: 'testextensionidtestextensionid00',
       lastError: null,
       sendMessage: (msg, cb) => { messages.push(msg); if (cb) cb({ ok: true }); },
-      onMessage: { addListener: () => {} },
+      onMessage: { addListener: (fn) => { msgListeners.push(fn); } },
       getManifest: () => ({ oauth2: { client_id: 'x' } }),
     },
   });
@@ -177,6 +178,12 @@ export async function loadPage({ url, title = '', body = [], readyState = 'compl
   };
   return {
     messages, errors, listeners, win, doc,
+    /** Deliver a runtime message the way the worker would, and return the reply. */
+    send: (msg) => {
+      let reply;
+      msgListeners.forEach((fn) => { try { fn(msg, {}, (r) => { reply = r; }); } catch (e) { errors.push(e); } });
+      return reply;
+    },
     fire: (target, type, ev) => (listeners[target][type] || []).forEach((fn) => {
       try { fn(ev); } catch (e) { errors.push(e); }
     }),

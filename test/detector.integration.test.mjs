@@ -125,3 +125,43 @@ test('a resume upload alone is not enough', async () => {
       'attaching a file is not the same as submitting');
   } finally { page.restore(); }
 });
+
+test('opening a job board page is recorded, so an empty log means "never ran"', async () => {
+  const page = await loadPage({
+    url: 'https://job-boards.greenhouse.io/reddit/jobs/8088720',
+    title: 'Staff Engineer at Reddit',
+    body: [new El('h1', { class: 'app-title' }, 'Staff Engineer')],
+  });
+  try {
+    const visit = page.messages.find((m) => m.type === 'DETECT_LOG' && m.payload.entry.outcome === 'visited');
+    assert.ok(visit, 'merely opening a board page must leave a trace');
+    assert.equal(visit.payload.entry.board, 'Greenhouse');
+    assert.equal(visit.payload.entry.score, 10, 'the known-board bonus should be the only evidence');
+  } finally { page.restore(); }
+});
+
+test('an ordinary site is not logged as a visit', async () => {
+  const page = await loadPage({
+    url: 'https://news.example.com/article/1',
+    title: 'Some article',
+    body: [new El('p', {}, 'Nothing to do with jobs.')],
+  });
+  try {
+    assert.equal(page.messages.find((m) => m.type === 'DETECT_LOG'), undefined);
+  } finally { page.restore(); }
+});
+
+test('the detector answers a liveness probe', async () => {
+  const page = await loadPage({
+    url: 'https://job-boards.greenhouse.io/reddit/jobs/8088720',
+    title: 'Staff Engineer at Reddit',
+    body: [new El('h1', { class: 'app-title' }, 'Staff Engineer')],
+  });
+  try {
+    const reply = page.send({ type: 'PING' });
+    assert.ok(reply && reply.alive, 'PING must be answered, or the options self-test reports a false negative');
+    assert.equal(reply.board, 'Greenhouse');
+    assert.equal(reply.onAtsHost, true);
+    assert.equal(reply.threshold, 60);
+  } finally { page.restore(); }
+});

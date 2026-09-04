@@ -190,6 +190,24 @@ const handlers = {
     return { ok: true };
   },
 
+  /** Is the detector alive in the active tab, and what has it seen? */
+  async PING_TAB() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) throw new Error('No active tab.');
+    const url = tab.url || '';
+    if (/^(chrome|edge|about|chrome-extension|devtools):/i.test(url)) {
+      return { alive: false, url, reason: 'Chrome blocks extensions on internal pages. Open a normal web page and try again.' };
+    }
+    const res = await chrome.tabs.sendMessage(tab.id, { type: 'PING' }).catch(() => null);
+    if (!res || !res.alive) {
+      return {
+        alive: false, url,
+        reason: 'The content script is not running in that tab. Reload the page (Cmd-R) — content scripts only inject into pages loaded after the extension was installed or reloaded.',
+      };
+    }
+    return { ...res, alive: true, tabUrl: url };
+  },
+
   /** Ask the active tab what job it is showing, for one-click manual add. */
   async SCRAPE_ACTIVE_TAB() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

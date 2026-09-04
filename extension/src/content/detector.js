@@ -440,8 +440,30 @@
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
+  /**
+   * Note that the detector actually ran here.
+   *
+   * The near-miss report only fires once some evidence has been added, so a
+   * board page you merely opened produced no record at all — leaving an empty
+   * log ambiguous between "nothing to report" and "never loaded".
+   */
+  function logVisit() {
+    if (!onAtsHost || window.top !== window) return;
+    let meta = {};
+    try { meta = P.extractPageMeta(document, location.href, A.run(document, location.href)); } catch (_) {}
+    send('DETECT_LOG', {
+      entry: {
+        at: Date.now(), outcome: 'visited', url: location.href, host: U.hostOf(location.href),
+        board: meta.board || '', company: meta.company || '', position: meta.position || '',
+        score: state.score, threshold: THRESHOLD, reasons: state.reasons.slice(0, 8),
+        resume: state.resume ? state.resume.name : '',
+      },
+    });
+  }
+
   function onReady() {
     checkSuccessUrl();
+    logVisit();
     reportSeen();
     if (document.body) {
       // Some flows land straight on a confirmation page after a redirect.
@@ -487,6 +509,23 @@
 
   // Let the popup ask this tab what job it is looking at, for manual adds.
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    // Liveness probe. Without this there is no way to tell a detector that is
+    // running and simply has nothing to report from one that never loaded.
+    if (msg && msg.type === 'PING') {
+      sendResponse({
+        alive: true,
+        url: location.href,
+        host: U.hostOf(location.href),
+        board: (P.boardFor(location.href) || {}).label || '',
+        onAtsHost,
+        score: state.score,
+        threshold: THRESHOLD,
+        reasons: state.reasons.slice(0, 12),
+        resume: state.resume ? state.resume.name : '',
+        isFrame: window.top !== window,
+      });
+      return true;
+    }
     if (msg && msg.type === 'SCRAPE_CURRENT') {
       try {
         const meta = P.extractPageMeta(document, location.href, A.run(document, location.href));
