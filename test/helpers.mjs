@@ -1,5 +1,5 @@
 /** Loads the extension's globalThis-based modules, with a minimal chrome stub. */
-const store = { local: {} };
+const store = { local: {}, session: {} };
 
 globalThis.chrome = {
   runtime: { id: 'test-extension-id', lastError: null, getURL: (p) => 'chrome-extension://test/' + p },
@@ -12,6 +12,15 @@ globalThis.chrome = {
       },
       async set(obj) { Object.assign(store.local, obj); },
       async remove(keys) { (Array.isArray(keys) ? keys : [keys]).forEach((k) => delete store.local[k]); },
+    },
+    session: {
+      async get(keys) {
+        if (keys == null) return { ...store.session };
+        const list = Array.isArray(keys) ? keys : [keys];
+        return Object.fromEntries(list.filter((k) => k in store.session).map((k) => [k, store.session[k]]));
+      },
+      async set(obj) { Object.assign(store.session, obj); },
+      async remove(keys) { (Array.isArray(keys) ? keys : [keys]).forEach((k) => delete store.session[k]); },
     },
   },
   identity: {
@@ -26,7 +35,10 @@ globalThis.chrome = {
   contextMenus: { removeAll(cb) { cb && cb(); }, create() {}, onClicked: { addListener() {} } },
 };
 
-export function resetStorage() { for (const k of Object.keys(store.local)) delete store.local[k]; }
+export function resetStorage() {
+  for (const k of Object.keys(store.local)) delete store.local[k];
+  for (const k of Object.keys(store.session)) delete store.session[k];
+}
 export const rawStorage = store.local;
 
 await import('../extension/src/common/constants.js');
