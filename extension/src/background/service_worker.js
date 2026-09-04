@@ -190,22 +190,48 @@ const handlers = {
     return { ok: true };
   },
 
-  /** Is the detector alive in the active tab, and what has it seen? */
-  async PING_TAB() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.id) throw new Error('No active tab.');
-    const url = tab.url || '';
-    if (/^(chrome|edge|about|chrome-extension|devtools):/i.test(url)) {
-      return { alive: false, url, reason: 'Chrome blocks extensions on internal pages. Open a normal web page and try again.' };
+  /**
+   * Probe every open web tab, not just the active one.
+   *
+   * The self-test is triggered from the options page, which is by definition
+   * the active tab at the moment the button is pressed — so querying the
+   * active tab only ever probed the options page itself.
+   */
+  async PING_TABS() {
+    const tabs = await chrome.tabs.query({});
+    const web = tabs
+      .filter((t) => t.id && /^https?:/i.test(t.url || ''))
+      .slice(0, 25);
+
+    if (!web.length) {
+      return { tabs: [], note: 'No ordinary web pages are open. Open a job posting in a tab, then run this again.' };
     }
-    const res = await chrome.tabs.sendMessage(tab.id, { type: 'PING' }).catch(() => null);
-    if (!res || !res.alive) {
+
+    const results = await Promise.all(web.map(async (t) => {
+      const res = await chrome.tabs.sendMessage(t.id, { type: 'PING' }).catch(() => null);
       return {
-        alive: false, url,
-        reason: 'The content script is not running in that tab. Reload the page (Cmd-R) — content scripts only inject into pages loaded after the extension was installed or reloaded.',
+        title: (t.title || '').slice(0, 70),
+        url: t.url,
+        host: U.hostOf(t.url),
+        alive: !!(res && res.alive),
+        board: (res && res.board) || '',
+        onAtsHost: !!(res && res.onAtsHost),
+        score: res ? res.score : null,
+        threshold: res ? res.threshold : null,
+        reasons: (res && res.reasons) || [],
+        resume: (res && res.resume) || '',
       };
-    }
-    return { ...res, alive: true, tabUrl: url };
+    }));
+
+    const alive = results.filter((r) => r.alive).length;
+    return {
+      tabs: results,
+      alive,
+      total: results.length,
+      note: alive === 0
+        ? 'The content script is running in none of your open tabs. Every one of them was loaded before the extension was last reloaded — reload a job page (Cmd-R) and run this again.'
+        : '',
+    };
   },
 
   /** Ask the active tab what job it is showing, for one-click manual add. */

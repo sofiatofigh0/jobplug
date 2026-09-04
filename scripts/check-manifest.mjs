@@ -96,6 +96,26 @@ if (!clientId || /REPLACE_WITH/.test(clientId)) {
   notes.push('manifest.oauth2.client_id is still the placeholder — set it, or use "Browser redirect" sign-in in Options.');
 }
 
+// --- content scripts must actually load in the declared order ----------------
+// Checking only that each file exists missed a manifest that omitted two
+// dependency files: every listed file was present, and the extension was still
+// dead on arrival because the first script to run threw.
+for (const cs of manifest.content_scripts || []) {
+  const names = (cs.js || []).join(', ');
+  const defined = new Set();
+  const needs = { 'parse.js': ['C', 'U'], 'adapters.js': ['C', 'U', 'P'], 'detector.js': ['C', 'U', 'P', 'A'] };
+  const provides = { 'constants.js': 'C', 'util.js': 'U', 'parse.js': 'P', 'adapters.js': 'A' };
+  for (const file of cs.js || []) {
+    const base = path.basename(file);
+    for (const dep of needs[base] || []) {
+      if (!defined.has(dep)) {
+        problems.push(`${file} uses JAT.${dep} but nothing before it in this content_scripts entry defines it (order: ${names})`);
+      }
+    }
+    if (provides[base]) defined.add(provides[base]);
+  }
+}
+
 // --- report ------------------------------------------------------------------
 if (problems.length) {
   console.error('FAIL\n' + problems.map((p) => '  · ' + p).join('\n'));

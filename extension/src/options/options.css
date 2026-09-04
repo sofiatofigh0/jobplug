@@ -104,3 +104,5 @@ button.copy { padding:3px 9px; font-size:12px; flex:none; }
 .log-entry.seen { border-left-color: var(--border-strong); opacity: .85; }
 #ping-result strong { display: block; margin-bottom: 4px; }
 #ping-result div { margin-top: 3px; }
+.ping-row { display:flex; gap:9px; align-items:baseline; margin-top:5px; font-size:12.5px; }
+.ping-host { font-weight:550; min-width:190px; }

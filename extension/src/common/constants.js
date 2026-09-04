@@ -8,6 +8,9 @@
 
   C.EXT_NAME = 'JobPlug';
   C.SCHEMA_VERSION = 3;
+  // Bumped when detection behaviour changes, so a page can be asked which
+  // build is actually running in it.
+  C.BUILD = '2026.09.04-1';
 
   // ---------------------------------------------------------------------------
   // Google

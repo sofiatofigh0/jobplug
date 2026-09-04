@@ -163,29 +163,39 @@
 
   let logCache = [];
 
-  /** One-click check that the content script is actually running somewhere. */
-  async function pingTab() {
+  /**
+   * Check which open tabs the content script is actually running in.
+   * Scans every tab rather than the active one — this page is the active tab
+   * whenever the button is pressed.
+   */
+  async function pingTabs() {
     const box = $('#ping-result');
     box.classList.remove('hidden');
     box.className = 'status';
-    box.textContent = 'Checking the active tab…';
+    box.textContent = 'Checking your open tabs…';
     try {
-      const r = await send('PING_TAB');
-      if (!r.alive) {
-        box.className = 'status bad';
-        box.innerHTML = `<strong>Detector not running on that tab.</strong>${esc(r.reason)}` +
-          `<div class="help">${esc(r.url || '')}</div>`;
+      const r = await send('PING_TABS');
+      if (!r.tabs.length) {
+        box.className = 'status warn';
+        box.textContent = r.note;
         return;
       }
-      box.className = 'status ok';
-      box.innerHTML = `<strong>Detector is running.</strong>` +
-        `<div>${r.board ? `Recognised as <b>${esc(r.board)}</b>` : `<b>${esc(r.host)}</b> is not a known job board — detection still works, but needs a resume upload plus a submit.`}</div>` +
-        `<div>Evidence so far: <b>${r.score}</b> of ${r.threshold} needed` +
-        `${r.reasons.length ? ` — ${esc(r.reasons.map(explainReason).join('; '))}` : ' — nothing yet'}.</div>` +
-        (r.resume ? `<div>Resume seen: <b>${esc(r.resume)}</b></div>` : '');
+      box.className = r.alive ? 'status ok' : 'status bad';
+      const rows = r.tabs.map((t) => {
+        const state = t.alive
+          ? `running${t.board ? ` · ${esc(t.board)}` : ''}${t.score != null ? ` · ${t.score}/${t.threshold}` : ''}`
+          : 'NOT running — reload this tab';
+        return `<div class="ping-row">
+          <span class="pill ${t.alive ? 'good' : 'warn'}">${t.alive ? 'ok' : 'off'}</span>
+          <span class="ping-host">${esc(t.host)}</span>
+          <span class="muted">${state}</span>
+        </div>`;
+      }).join('');
+      box.innerHTML = `<strong>Detector running in ${r.alive} of ${r.total} open tabs.</strong>` +
+        (r.note ? `<div>${esc(r.note)}</div>` : '') + rows;
     } catch (err) {
       box.className = 'status bad';
-      box.innerHTML = `<strong>Could not reach that tab.</strong>${esc(err.message)}`;
+      box.innerHTML = `<strong>Could not check.</strong>${esc(err.message)}`;
     }
   }
 
@@ -240,7 +250,7 @@
     }));
     $('#btn-add-alias').addEventListener('click', () => renderAliases([...collectAliases(), { match: '', label: '' }]));
     $('#btn-save').addEventListener('click', () => save().catch((e) => toast(e.message)));
-    $('#btn-ping').addEventListener('click', () => pingTab());
+    $('#btn-ping').addEventListener('click', () => pingTabs());
     $('#btn-refresh-log').addEventListener('click', () => renderLog().catch((e) => toast(e.message)));
     $('#btn-clear-log').addEventListener('click', async () => {
       await send('CLEAR_DETECT_LOG'); await renderLog(); toast('Detection log cleared.');

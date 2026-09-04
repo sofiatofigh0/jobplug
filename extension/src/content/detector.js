@@ -461,6 +461,25 @@
     });
   }
 
+  /**
+   * Mark the shared DOM so liveness can be checked from an ordinary page
+   * console. The isolated world is otherwise invisible from the page, which
+   * makes "is the extension even running here?" needlessly hard to answer.
+   *
+   *   document.documentElement.dataset.jobplug   -> the build that is running
+   *   window.__jatNetHookInstalled               -> the MAIN-world hook
+   */
+  function stampDom() {
+    try {
+      const el = document.documentElement;
+      if (el && el.setAttribute) el.setAttribute('data-jobplug', C.BUILD);
+    } catch (_) {}
+  }
+  stampDom();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', stampDom, { once: true });
+  }
+
   function onReady() {
     checkSuccessUrl();
     logVisit();

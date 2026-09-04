@@ -7,6 +7,17 @@
  * unit tests on the pure helpers could never have caught.
  */
 import { pathToFileURL } from 'node:url';
+import fs from 'node:fs';
+
+/** The content-script files the manifest actually injects, in order. */
+export function manifestContentScripts() {
+  const manifest = JSON.parse(
+    fs.readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8')
+  );
+  return (manifest.content_scripts || [])
+    .flatMap((cs) => cs.js || [])
+    .map((f) => f.replace(/^src\//, ''));
+}
 
 class El {
   constructor(tag = 'div', attrs = {}, text = '') {
@@ -156,13 +167,12 @@ export async function loadPage({ url, title = '', body = [], readyState = 'compl
     catch (e) { errors.push(Object.assign(e, { file: rel })); }
   };
 
-  // manifest order
-  await load('content/nethook.js');
-  await load('common/constants.js');
-  await load('common/util.js');
-  await load('common/parse.js');
-  await load('content/adapters.js');
-  await load('content/detector.js');
+  // Load exactly what the manifest declares, in the order it declares it.
+  // Hardcoding this list previously hid a real fault: the manifest omitted
+  // constants.js and util.js, so in a real browser adapters.js threw on load
+  // and the detector never ran — while every test passed against a load order
+  // that only existed in the harness.
+  for (const file of manifestContentScripts()) await load(file);
 
   // Let the debounced reporters settle. reportSeen debounces at 1200ms, so
   // callers that assert on SEEN_JOB pass a longer settle.
